@@ -69,9 +69,27 @@ const TODAY = new Date().toISOString().slice(0, 10);
 const fmtDate = d => { if (!d) return "—"; const dt = new Date(d + "T00:00:00"); return dt.toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" }); };
 const fmtDateFull = d => { if (!d) return "—"; const dt = new Date(d + "T00:00:00"); return dt.toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric", year:"numeric" }); };
 const fmtTime = t => { if (!t) return ""; const [h, m] = t.split(":"); const hr = parseInt(h); return `${hr > 12 ? hr - 12 : hr || 12}:${m} ${hr >= 12 ? "PM" : "AM"}`; };
-const ptAge = dob => { if (!dob) return "?"; const a = Math.floor((Date.now() - new Date(dob)) / (365.25 * 864e5)); return a < 0 || a > 150 ? "?" : a; };
+const ptAge = dob => { if (!dob) return "?"; const a = Math.floor((Date.now() - new Date(dob + "T12:00:00")) / (365.25 * 864e5)); return a < 0 || a > 150 ? "?" : a; };
 const isFuture = d => d && d >= TODAY;
 const isPast   = d => d && d < TODAY;
+
+// Fallback exercise definitions — used when Supabase RLS blocks patient
+// access to the exercise library rows (clinic_id IS NULL).
+// Keeps HEP cards readable even without a DB hit.
+const EXERCISE_LIB_FALLBACK = [
+  {id:"EX-001",name:"Quad Sets",category:"Strengthening",region:"Knee",sets:3,reps:10,hold:5,desc:"Tighten thigh muscle by pressing back of knee into surface. Hold, then relax."},
+  {id:"EX-002",name:"Straight Leg Raises",category:"Strengthening",region:"Hip/Knee",sets:3,reps:15,hold:2,desc:"Tighten quad, lift leg to height of opposite bent knee. Lower slowly."},
+  {id:"EX-003",name:"Clamshells",category:"Strengthening",region:"Hip",sets:3,reps:15,hold:1,desc:"Lie on side, knees bent. Rotate top knee upward. Keep pelvis stable."},
+  {id:"EX-004",name:"Ankle Pumps",category:"Mobility",region:"Ankle",sets:3,reps:20,hold:0,desc:"Point foot down, then pull toes toward shin. Promotes circulation."},
+  {id:"EX-005",name:"Hip Flexor Stretch",category:"Flexibility",region:"Hip",sets:3,reps:1,hold:30,desc:"Kneel on one knee, lunge forward until stretch felt in front of hip."},
+  {id:"EX-006",name:"Bridges",category:"Strengthening",region:"Glutes/Core",sets:3,reps:15,hold:2,desc:"Lie on back, knees bent. Push hips up to form straight line."},
+  {id:"EX-007",name:"Wall Slides",category:"Strengthening",region:"Shoulder",sets:3,reps:10,hold:3,desc:"Back against wall. Slide arms up overhead keeping contact throughout."},
+  {id:"EX-008",name:"Pendulum Circles",category:"Mobility",region:"Shoulder",sets:2,reps:20,hold:0,desc:"Lean forward, let arm hang freely. Use body to create small circles."},
+  {id:"EX-009",name:"Seated Row (Band)",category:"Strengthening",region:"Upper Back",sets:3,reps:12,hold:2,desc:"Sit tall, band around feet. Pull hands to sides of torso, squeezing shoulder blades."},
+  {id:"EX-010",name:"Hamstring Stretch",category:"Flexibility",region:"Knee/Hip",sets:3,reps:1,hold:30,desc:"Lie on back. Pull bent knee to chest, then straighten leg until stretch felt."},
+  {id:"EX-011",name:"Cervical Retractions",category:"Mobility",region:"Neck/Cervical",sets:3,reps:10,hold:3,desc:"Sitting tall, tuck chin in as if making a double chin. Do not tilt head."},
+  {id:"EX-012",name:"Lumbar Rotation Stretch",category:"Flexibility",region:"Low Back",sets:2,reps:1,hold:30,desc:"Lie on back, knees bent. Let knees drop to one side while keeping shoulders flat."},
+];
 
 /* ── GLOBAL STYLES ────────────────────────────────────── */
 const GLOBAL_CSS = `
@@ -1344,7 +1362,8 @@ function PatientApp({ user, onSignOut }) {
       setClaims(extract(claimRows).filter(c => c.pid === pid));
       setProviders(extract(staffRows).map(s => s.full_name).filter(Boolean));
 
-      // Exercise library from DB (merge with nothing since patients don't have SVG defs)
+      // Exercise library from DB — merge with fallback so HEP cards always
+      // resolve even if RLS blocks the patient from reading clinic_id IS NULL rows
       const libMapped = (libRows.data || []).map(r => ({
         id: r.id,
         name: r.data?.name,
@@ -1359,7 +1378,10 @@ function PatientApp({ user, onSignOut }) {
         videoUrl: r.data?.video_url || null,
         svg: null,
       }));
-      setExLib(libMapped);
+      // DB entries win over fallback (DB may have updated versions)
+      const dbIds = new Set(libMapped.map(e => e.id));
+      const merged = [...libMapped, ...EXERCISE_LIB_FALLBACK.filter(e => !dbIds.has(e.id))];
+      setExLib(merged);
 
       // Fetch messages for this patient
       const { data: msgRows } = await supabase.from("messages").select("*").filter("data->>pid","eq",pid);
