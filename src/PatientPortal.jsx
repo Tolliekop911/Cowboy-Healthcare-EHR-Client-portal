@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, Component } from "react";
+import { useState, useEffect, useCallback, useRef, Component } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 /* ── SUPABASE ─────────────────────────────────────────── */
@@ -624,6 +624,16 @@ function ExercisesTab({ patient, heps, exerciseLib, toast }) {
                     }
                   </div>
                 )}
+                {libEx.videoUrl && (
+                  <div style={{padding:"10px 18px 0"}}>
+                    <a href={libEx.videoUrl} target="_blank" rel="noopener noreferrer"
+                      style={{display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,
+                        color:C.p600,textDecoration:"none",background:C.p50,border:`1px solid ${C.p200}`,
+                        borderRadius:8,padding:"7px 12px",width:"fit-content"}}>
+                      ▶ Watch Demo Video
+                    </a>
+                  </div>
+                )}
                 <div style={{ padding:"14px 16px" }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
                     <div style={{ flex:1, paddingRight:10 }}>
@@ -945,6 +955,97 @@ function ProfileTab({ patient, user, onSignOut }) {
 }
 
 /* ══════════════════════════════════════════════════════
+   TAB: MESSAGES
+══════════════════════════════════════════════════════ */
+function MessagesTab({ patient, user, messages, setMessages }) {
+  const [body, setBody] = useState("");
+  const bottomRef = useRef();
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Real-time subscription
+  useEffect(() => {
+    if (!patient?.id) return;
+    const channel = supabase.channel(`portal-msgs-${patient.id}`)
+      .on("postgres_changes", { event:"INSERT", schema:"public", table:"messages" }, (payload) => {
+        const d = payload.new?.data || payload.new;
+        if (d?.pid === patient.id) setMessages(prev => {
+          if (prev.some(m => m.id === d.id)) return prev;
+          return [...prev, d];
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [patient?.id]);
+
+  async function sendMsg() {
+    if (!body.trim()) return;
+    const msg = {
+      id: `MSG-${Date.now()}`,
+      pid: patient.id,
+      fromType: "patient",
+      fromName: `${patient.fn || ""} ${patient.ln || ""}`.trim(),
+      body: body.trim(),
+      ts: new Date().toISOString(),
+      read: false,
+    };
+    setMessages(prev => [...prev, msg]);
+    setBody("");
+    await supabase.from("messages").insert([{ id: msg.id, data: msg }]);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+  }
+
+  return (
+    <div>
+      <SectionHead title="Messages" sub="Communicate securely with your care team"/>
+      <div style={{ background:C.w, borderRadius:16, border:`1px solid ${C.g200}`, overflow:"hidden", boxShadow:"0 2px 12px rgba(124,58,237,0.07)" }}>
+        {/* Chat area */}
+        <div style={{ minHeight:320, maxHeight:480, overflowY:"auto", padding:"16px 14px", display:"flex", flexDirection:"column", gap:8 }}>
+          {messages.length === 0 && (
+            <div style={{ textAlign:"center", padding:"40px 16px", color:C.g400 }}>
+              <div style={{ width:48, height:48, borderRadius:14, background:C.p50, border:`1.5px solid ${C.p100}`, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 12px" }}>
+                <Ic n="send" s={22} c={C.p300} sw={1.6}/>
+              </div>
+              <p style={{ fontWeight:700, color:C.g700, fontSize:14, marginBottom:5 }}>No messages yet.</p>
+              <p style={{ fontSize:13 }}>Send a message to your care team below.</p>
+            </div>
+          )}
+          {messages.map(m => {
+            const isMe = m.fromType === "patient";
+            return (
+              <div key={m.id} style={{ display:"flex", justifyContent:isMe?"flex-end":"flex-start" }}>
+                <div style={{ maxWidth:"75%" }}>
+                  <div style={{ fontSize:10, color:C.g400, marginBottom:3, textAlign:isMe?"right":"left" }}>
+                    {m.fromName} · {m.ts ? new Date(m.ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}) : ""}
+                  </div>
+                  <div style={{ background:isMe?C.p500:C.g100, color:isMe?"#fff":C.g800, borderRadius:isMe?"14px 14px 3px 14px":"14px 14px 14px 3px", padding:"10px 14px", fontSize:13, lineHeight:1.5, wordBreak:"break-word" }}>
+                    {m.body}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          <div ref={bottomRef}/>
+        </div>
+        {/* Input */}
+        <div style={{ borderTop:`1px solid ${C.g200}`, padding:"12px 14px", display:"flex", gap:8 }}>
+          <textarea value={body} onChange={e => setBody(e.target.value)} onKeyDown={handleKeyDown} placeholder="Type a message… (Enter to send)" rows={2} style={{ ...IST, flex:1, resize:"none", fontSize:13 }}/>
+          <button onClick={sendMsg} disabled={!body.trim()} style={{ padding:"10px 16px", background:body.trim()?C.p500:C.g200, color:body.trim()?"#fff":C.g400, border:"none", borderRadius:10, fontSize:13, fontWeight:700, cursor:body.trim()?"pointer":"not-allowed", display:"flex", alignItems:"center", gap:6, transition:"background .15s", flexShrink:0 }}>
+            <Ic n="send" s={14} c={body.trim()?"#fff":C.g400} sw={2}/>
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════
    MAIN PATIENT APP (after login + patient lookup)
 ══════════════════════════════════════════════════════ */
 function PatientApp({ user, onSignOut }) {
@@ -958,6 +1059,7 @@ function PatientApp({ user, onSignOut }) {
   const [claims, setClaims]       = useState([]);
   const [providers, setProviders] = useState([]);
   const [exerciseLib, setExLib]   = useState([]);
+  const [messages, setMessages]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [notFound, setNotFound]   = useState(false);
   const [toast, setToastState]    = useState(null);
@@ -1014,9 +1116,15 @@ function PatientApp({ user, onSignOut }) {
         hold: r.data?.hold_time,
         difficulty: r.data?.difficulty,
         imageUrl: r.data?.image_url || null,
+        videoUrl: r.data?.video_url || null,
         svg: null,
       }));
       setExLib(libMapped);
+
+      // Fetch messages for this patient
+      const { data: msgRows } = await supabase.from("messages").select("*").filter("data->>pid","eq",pid);
+      const msgs = (msgRows || []).map(r => r.data ?? r).sort((a,b) => (a.ts||"").localeCompare(b.ts||""));
+      setMessages(msgs);
 
       setLoading(false);
     }
@@ -1045,6 +1153,7 @@ function PatientApp({ user, onSignOut }) {
     { id:"exercises",   label:"Exercises",  icon:"dumbbell" },
     { id:"plan",        label:"My Plan",    icon:"clipboard" },
     { id:"billing",     label:"Billing",    icon:"dollar" },
+    { id:"messages",    label:"Messages",   icon:"send" },
     { id:"profile",     label:"Profile",    icon:"user" },
   ];
 
@@ -1159,6 +1268,7 @@ function PatientApp({ user, onSignOut }) {
           {patient && nav === "exercises"    && <ExercisesTab patient={patient} heps={heps} exerciseLib={exerciseLib} toast={showToast}/>}
           {patient && nav === "plan"         && <PlanTab patient={patient} plans={plans} outcomes={outcomes}/>}
           {patient && nav === "billing"      && <BillingTab claims={claims}/>}
+          {patient && nav === "messages"    && <MessagesTab patient={patient} user={user} messages={messages} setMessages={setMessages}/>}
           {patient && nav === "profile"      && <ProfileTab patient={patient} user={user} onSignOut={onSignOut}/>}
         </div>
 
