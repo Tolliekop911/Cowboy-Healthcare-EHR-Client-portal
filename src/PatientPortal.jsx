@@ -957,7 +957,7 @@ function ProfileTab({ patient, user, onSignOut }) {
 /* ══════════════════════════════════════════════════════
    TAB: MESSAGES
 ══════════════════════════════════════════════════════ */
-function MessagesTab({ patient, user, messages, setMessages }) {
+function MessagesTab({ patient, user, messages, setMessages, clinicId }) {
   const [body, setBody] = useState("");
   const bottomRef = useRef();
 
@@ -965,7 +965,18 @@ function MessagesTab({ patient, user, messages, setMessages }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Real-time subscription
+  const fetchMsgs = useCallback(async () => {
+    const { data } = await supabase.from("messages").select("*").filter("data->>pid","eq",patient.id);
+    if (data) {
+      const sorted = data.map(r => r.data ?? r).sort((a,b) => (a.ts||"").localeCompare(b.ts||""));
+      setMessages(prev => {
+        if (JSON.stringify(prev.map(m=>m.id)) === JSON.stringify(sorted.map(m=>m.id))) return prev;
+        return sorted;
+      });
+    }
+  }, [patient?.id]);
+
+  // Real-time subscription + polling fallback
   useEffect(() => {
     if (!patient?.id) return;
     const channel = supabase.channel(`portal-msgs-${patient.id}`)
@@ -977,8 +988,10 @@ function MessagesTab({ patient, user, messages, setMessages }) {
         });
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [patient?.id]);
+    // Polling fallback — guarantees messages appear within 4 s even if realtime is blocked by RLS
+    const poll = setInterval(fetchMsgs, 4000);
+    return () => { supabase.removeChannel(channel); clearInterval(poll); };
+  }, [patient?.id, fetchMsgs]);
 
   async function sendMsg() {
     if (!body.trim()) return;
@@ -990,10 +1003,12 @@ function MessagesTab({ patient, user, messages, setMessages }) {
       body: body.trim(),
       ts: new Date().toISOString(),
       read: false,
+      _cid: clinicId || "",
     };
     setMessages(prev => [...prev, msg]);
     setBody("");
-    await supabase.from("messages").insert([{ id: msg.id, data: msg }]);
+    // Include clinic_id so the EHR can find and subscribe to this message
+    await supabase.from("messages").insert([{ id: msg.id, clinic_id: clinicId, data: msg }]);
   }
 
   function handleKeyDown(e) {
@@ -1268,7 +1283,7 @@ function PatientApp({ user, onSignOut }) {
           {patient && nav === "exercises"    && <ExercisesTab patient={patient} heps={heps} exerciseLib={exerciseLib} toast={showToast}/>}
           {patient && nav === "plan"         && <PlanTab patient={patient} plans={plans} outcomes={outcomes}/>}
           {patient && nav === "billing"      && <BillingTab claims={claims}/>}
-          {patient && nav === "messages"    && <MessagesTab patient={patient} user={user} messages={messages} setMessages={setMessages}/>}
+          {patient && nav === "messages"    && <MessagesTab patient={patient} user={user} messages={messages} setMessages={setMessages} clinicId={clinicId}/>}
           {patient && nav === "profile"      && <ProfileTab patient={patient} user={user} onSignOut={onSignOut}/>}
         </div>
 
