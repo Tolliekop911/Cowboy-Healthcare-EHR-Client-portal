@@ -1001,9 +1001,103 @@ function BillingTab({ claims }) {
 }
 
 /* ══════════════════════════════════════════════════════
+   INTAKE FORM (inside Profile tab)
+══════════════════════════════════════════════════════ */
+function IntakeForm({ patient, clinicId }) {
+  const isComplete = patient.emergencyContact && patient.occupation;
+  const [open, setOpen] = useState(!isComplete);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    emergencyContact: patient.emergencyContact || "",
+    emergencyPhone:   patient.emergencyPhone   || "",
+    emergencyRel:     patient.emergencyRel     || "",
+    occupation:       patient.occupation       || "",
+    hobbies:          patient.hobbies          || "",
+    activityLevel:    patient.activityLevel    || "Moderate",
+    surgeries:        patient.surgeries        || "",
+    medHistory:       patient.medHistory       || "",
+    currentMeds:      patient.currentMeds      || "",
+    allergyText:      (patient.allergies||[]).join(", "),
+    referralSource:   patient.referralSource   || "",
+    chiefComplaint:   patient.chiefComplaint   || "",
+  });
+  const f = k => v => setForm(p => ({ ...p, [k]: v }));
+
+  async function save() {
+    setSaving(true);
+    const updated = {
+      ...patient,
+      ...form,
+      allergies: form.allergyText ? form.allergyText.split(",").map(s=>s.trim()).filter(Boolean) : patient.allergies || [],
+    };
+    const { error } = await supabase.from("patients").upsert({ id: patient.id, clinic_id: clinicId, data: updated });
+    if (!error) { setSaved(true); setOpen(false); setTimeout(()=>setSaved(false), 3000); }
+    setSaving(false);
+  }
+
+  return (
+    <Card style={{ marginBottom:14, overflow:"hidden" }}>
+      <button onClick={() => setOpen(o => !o)} style={{ width:"100%", padding:"14px 18px", background:"none", border:"none", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center", textAlign:"left" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:28, height:28, borderRadius:8, background:isComplete?C.gr600:`linear-gradient(135deg,${C.p600},${C.p400})`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <Ic n={isComplete?"check":"edit"} s={13} c="#fff" sw={2.5}/>
+          </div>
+          <div>
+            <p style={{ fontSize:13, fontWeight:700, color:C.g800 }}>{isComplete ? "Intake Form Complete ✓" : "Complete Your Intake Form"}</p>
+            <p style={{ fontSize:11, color:C.g400 }}>{isComplete ? "Tap to review or update your information" : "Takes 2 min — helps your therapist prepare for your visit"}</p>
+          </div>
+        </div>
+        <Ic n={open?"chevron-up":"chevron-down"} s={16} c={C.g400} sw={2}/>
+      </button>
+
+      {open && (
+        <div style={{ padding:"0 18px 18px", borderTop:`1px solid ${C.g100}` }}>
+          <p style={{ fontSize:11, fontWeight:700, color:C.g500, textTransform:"uppercase", letterSpacing:0.6, margin:"16px 0 10px" }}>Emergency Contact</p>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Contact Name</label><input value={form.emergencyContact} onChange={e=>f("emergencyContact")(e.target.value)} placeholder="e.g. Jane Smith" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13 }}/></div>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Phone</label><input value={form.emergencyPhone} onChange={e=>f("emergencyPhone")(e.target.value)} placeholder="e.g. 082 555 0000" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13 }}/></div>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Relationship</label><input value={form.emergencyRel} onChange={e=>f("emergencyRel")(e.target.value)} placeholder="e.g. Spouse, Parent" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13 }}/></div>
+          </div>
+
+          <p style={{ fontSize:11, fontWeight:700, color:C.g500, textTransform:"uppercase", letterSpacing:0.6, margin:"14px 0 10px" }}>Lifestyle</p>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Occupation</label><input value={form.occupation} onChange={e=>f("occupation")(e.target.value)} placeholder="e.g. Office worker, Nurse" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13 }}/></div>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Activity Level</label>
+              <select value={form.activityLevel} onChange={e=>f("activityLevel")(e.target.value)} style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13 }}>
+                {["Sedentary","Light","Moderate","Active","Very Active"].map(l=><option key={l}>{l}</option>)}
+              </select>
+            </div>
+            <div style={{ gridColumn:"1/-1" }}><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Hobbies / Sport</label><input value={form.hobbies} onChange={e=>f("hobbies")(e.target.value)} placeholder="e.g. Running, Cycling, Swimming" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13 }}/></div>
+          </div>
+
+          <p style={{ fontSize:11, fontWeight:700, color:C.g500, textTransform:"uppercase", letterSpacing:0.6, margin:"14px 0 10px" }}>Medical History</p>
+          <div style={{ display:"grid", gap:10, marginBottom:10 }}>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Past Surgeries / Injuries</label><textarea value={form.surgeries} onChange={e=>f("surgeries")(e.target.value)} rows={2} placeholder="e.g. ACL repair 2019, appendix 2015" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13, resize:"vertical" }}/></div>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Medical Conditions</label><textarea value={form.medHistory} onChange={e=>f("medHistory")(e.target.value)} rows={2} placeholder="e.g. Diabetes, Hypertension, Osteoporosis" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13, resize:"vertical" }}/></div>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Current Medications</label><textarea value={form.currentMeds} onChange={e=>f("currentMeds")(e.target.value)} rows={2} placeholder="e.g. Metformin 500mg, Lisinopril 10mg" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13, resize:"vertical" }}/></div>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Allergies (comma-separated)</label><input value={form.allergyText} onChange={e=>f("allergyText")(e.target.value)} placeholder="e.g. Penicillin, Latex, Ibuprofen" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13 }}/></div>
+          </div>
+
+          <p style={{ fontSize:11, fontWeight:700, color:C.g500, textTransform:"uppercase", letterSpacing:0.6, margin:"14px 0 10px" }}>Visit Info</p>
+          <div style={{ display:"grid", gap:10, marginBottom:16 }}>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>Chief Complaint (main reason for visit)</label><textarea value={form.chiefComplaint} onChange={e=>f("chiefComplaint")(e.target.value)} rows={2} placeholder="e.g. Lower back pain for 3 weeks, worse after sitting at work" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13, resize:"vertical" }}/></div>
+            <div><label style={{ fontSize:11, fontWeight:600, color:C.g600, display:"block", marginBottom:4 }}>How did you hear about us?</label><input value={form.referralSource} onChange={e=>f("referralSource")(e.target.value)} placeholder="e.g. GP referral, Google, Friend" style={{ ...IST, width:"100%", boxSizing:"border-box", fontSize:13 }}/></div>
+          </div>
+
+          <button onClick={save} disabled={saving} style={{ width:"100%", padding:"12px", background:saving?C.g200:C.p500, color:saving?C.g400:"#fff", border:"none", borderRadius:10, fontSize:14, fontWeight:700, cursor:saving?"not-allowed":"pointer", transition:"all .15s" }}>
+            {saving ? "Saving…" : saved ? "✓ Saved!" : "Save Intake Form"}
+          </button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* ══════════════════════════════════════════════════════
    TAB: PROFILE
 ══════════════════════════════════════════════════════ */
-function ProfileTab({ patient, user, onSignOut }) {
+function ProfileTab({ patient, user, onSignOut, clinicId }) {
   const initials = `${patient.fn?.[0] || "?"}${patient.ln?.[0] || ""}`.toUpperCase();
   const fields = [
     { label:"Full Name",    value:`${patient.fn} ${patient.ln}` },
@@ -1072,6 +1166,9 @@ function ProfileTab({ patient, user, onSignOut }) {
           </div>
         </Card>
       )}
+
+      {/* Intake Form */}
+      <IntakeForm patient={patient} clinicId={clinicId}/>
 
       {/* Sign out */}
       <button onClick={onSignOut} style={{ width:"100%", padding:"13px", background:C.w, color:C.r600, border:`1.5px solid #fca5a5`, borderRadius:12, fontSize:14, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8, transition:"all .15s" }} onMouseEnter={e=>{e.currentTarget.style.background=C.r50;}} onMouseLeave={e=>{e.currentTarget.style.background=C.w;}}>
@@ -1412,7 +1509,7 @@ function PatientApp({ user, onSignOut }) {
           {patient && nav === "plan"         && <PlanTab patient={patient} plans={plans} outcomes={outcomes}/>}
           {patient && nav === "billing"      && <BillingTab claims={claims}/>}
           {patient && nav === "messages"    && <MessagesTab patient={patient} user={user} messages={messages} setMessages={setMessages} clinicId={clinicId}/>}
-          {patient && nav === "profile"      && <ProfileTab patient={patient} user={user} onSignOut={onSignOut}/>}
+          {patient && nav === "profile"      && <ProfileTab patient={patient} user={user} onSignOut={onSignOut} clinicId={clinicId}/>}
         </div>
 
         {/* Mobile bottom nav */}
