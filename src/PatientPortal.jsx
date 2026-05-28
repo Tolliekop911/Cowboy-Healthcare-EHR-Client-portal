@@ -1051,16 +1051,82 @@ function PatientApp({ user, onSignOut }) {
   return (
     <>
       <style>{GLOBAL_CSS}{`
-        .pp-root { max-width: 520px; margin: 0 auto; min-height: 100vh; background: ${C.bg}; position: relative; padding-bottom: 80px; }
+        /* ── Mobile-first base ── */
+        .pp-root { min-height: 100vh; background: ${C.bg}; position: relative; padding-bottom: 80px; }
+        .pp-sidebar { display: none; }
         .pp-header { position: sticky; top: 0; z-index: 100; background: rgba(248,247,255,.92); backdrop-filter: blur(10px); border-bottom: 1px solid ${C.g200}; padding: 14px 18px 10px; display: flex; justify-content: space-between; align-items: center; }
         .pp-content { padding: 16px 18px; }
-        .pp-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 520px; background: rgba(255,255,255,.95); backdrop-filter: blur(12px); border-top: 1px solid ${C.g200}; display: flex; padding: 6px 4px 10px; z-index: 200; box-shadow: 0 -4px 20px rgba(76,29,149,0.08); }
+        .pp-nav { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,.95); backdrop-filter: blur(12px); border-top: 1px solid ${C.g200}; display: flex; padding: 6px 4px 10px; z-index: 200; box-shadow: 0 -4px 20px rgba(76,29,149,0.08); }
         .pp-nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 2px; border: none; background: none; cursor: pointer; transition: transform .15s; border-radius: 10px; }
         .pp-nav-btn:active { transform: scale(.92); }
-        @media(max-width:520px){ .pp-root{ max-width:100%; } .pp-nav{ max-width:100%; } }
+        /* ── Desktop layout ── */
+        @media(min-width:768px){
+          .pp-root { padding-bottom: 0; }
+          .pp-nav { display: none !important; }
+          .pp-sidebar {
+            display: flex; flex-direction: column;
+            position: fixed; top: 0; left: 0; bottom: 0; width: 230px;
+            background: #fff; border-right: 1px solid ${C.g200};
+            z-index: 50; overflow-y: auto;
+          }
+          .pp-header { margin-left: 230px; padding: 16px 28px; }
+          .pp-content { margin-left: 230px; padding: 28px 36px; }
+        }
       `}</style>
       <div className="pp-root">
-        {/* Header */}
+
+        {/* ── Desktop Sidebar ── */}
+        <aside className="pp-sidebar">
+          {/* Logo */}
+          <div style={{ padding:"20px 18px 16px", borderBottom:`1px solid ${C.g200}` }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <div style={{ width:38, height:38, borderRadius:11, background:`linear-gradient(135deg,${C.p700},${C.p500})`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 17 C5 14 5 11 7 9 C9 7.5 10.5 7 12 7 C13.5 7 15 7.5 17 9 C19 11 19 14 18 17"/>
+                  <path d="M1 17 Q12 20.5 23 17"/>
+                  <path d="M10 7.8 Q12 6.5 14 7.8"/>
+                  <path d="M12 10.5v3 M10.5 12h3"/>
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontSize:14, fontWeight:800, color:C.g800, lineHeight:1 }}>Cowboy EHR</div>
+                <div style={{ fontSize:10, color:C.g400, fontWeight:600, marginTop:2 }}>Patient Portal</div>
+              </div>
+            </div>
+          </div>
+          {/* Nav items */}
+          <nav style={{ padding:"14px 10px", flex:1 }}>
+            {NAV.map(item => {
+              const active = nav === item.id;
+              return (
+                <button key={item.id} onClick={() => setNav(item.id)} style={{ display:"flex", alignItems:"center", gap:10, width:"100%", padding:"10px 13px", border:"none", borderRadius:10, cursor:"pointer", background:active?C.p100:"transparent", color:active?C.p700:C.g500, fontFamily:"inherit", fontSize:13, fontWeight:active?700:500, marginBottom:3, transition:"all .15s", textAlign:"left" }} onMouseEnter={e=>{ if(!active){e.currentTarget.style.background=C.g50;} }} onMouseLeave={e=>{ if(!active){e.currentTarget.style.background="transparent";} }}>
+                  <Ic n={item.icon} s={17} c={active?C.p600:C.g400} sw={active?2.2:1.8}/>
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+          {/* User + sign out */}
+          {patient && (
+            <div style={{ padding:"14px 10px", borderTop:`1px solid ${C.g200}` }}>
+              <div style={{ display:"flex", alignItems:"center", gap:9, padding:"8px 12px", marginBottom:6 }}>
+                <div style={{ width:32, height:32, borderRadius:"50%", background:`linear-gradient(135deg,${C.p500},${C.p300})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800, color:"#fff", flexShrink:0 }}>
+                  {`${patient.fn?.[0]||""}${patient.ln?.[0]||""}`.toUpperCase()}
+                </div>
+                <div style={{ overflow:"hidden", flex:1 }}>
+                  <p style={{ fontSize:12, fontWeight:700, color:C.g800, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{patient.fn} {patient.ln}</p>
+                  <p style={{ fontSize:10, color:C.g400 }}>Patient</p>
+                </div>
+              </div>
+              <button onClick={onSignOut} style={{ display:"flex", alignItems:"center", gap:8, width:"100%", padding:"9px 13px", border:"none", borderRadius:9, cursor:"pointer", background:"transparent", color:C.g500, fontFamily:"inherit", fontSize:12, fontWeight:500, transition:"all .15s" }} onMouseEnter={e=>{ e.currentTarget.style.background=C.r50; e.currentTarget.style.color=C.r600; }} onMouseLeave={e=>{ e.currentTarget.style.background="transparent"; e.currentTarget.style.color=C.g500; }}>
+                <Ic n="logout" s={15} c="currentColor"/>
+                Sign Out
+              </button>
+            </div>
+          )}
+        </aside>
+
+        {/* ── Mobile Header (hidden on desktop via margin-left shift) ── */}
         <div className="pp-header">
           <div style={{ display:"flex", alignItems:"center", gap:9 }}>
             <div style={{ width:32, height:32, borderRadius:9, background:`linear-gradient(135deg,${C.p700},${C.p500})`, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -1096,7 +1162,7 @@ function PatientApp({ user, onSignOut }) {
           {patient && nav === "profile"      && <ProfileTab patient={patient} user={user} onSignOut={onSignOut}/>}
         </div>
 
-        {/* Bottom nav */}
+        {/* Mobile bottom nav */}
         <nav className="pp-nav">
           {NAV.map(item => {
             const active = nav === item.id;
