@@ -431,7 +431,7 @@ function HomeTab({ patient, appts, heps, plans, claims, exerciseLib, onNav, onBo
 /* ══════════════════════════════════════════════════════
    TAB: APPOINTMENTS
 ══════════════════════════════════════════════════════ */
-function AppointmentsTab({ patient, appts, setAppts, providers, toast }) {
+function AppointmentsTab({ patient, appts, setAppts, providers, clinicId, toast }) {
   const [tab, setTab]           = useState("upcoming");
   const [showBook, setShowBook] = useState(false);
   const [form, setForm]         = useState({ type:"Follow-up", date:"", time:"09:00", provider: providers[0] || "", notes:"" });
@@ -447,7 +447,7 @@ function AppointmentsTab({ patient, appts, setAppts, providers, toast }) {
     if (!form.date || !form.type) return;
     setSaving(true);
     const newAppt = { id:`AP-${Date.now()}`, pid:patient.id, status:"Requested", duration:30, room:"TBD", cc:form.notes||"", ...form };
-    const { error } = await supabase.from("appointments").upsert({ id:newAppt.id, data:newAppt });
+    const { error } = await supabase.from("appointments").upsert({ id:newAppt.id, clinic_id:clinicId, data:newAppt });
     setSaving(false);
     if (error) { toast("Failed to book — please call the clinic", "error"); return; }
     setAppts(p => [newAppt, ...p]);
@@ -950,6 +950,7 @@ function ProfileTab({ patient, user, onSignOut }) {
 function PatientApp({ user, onSignOut }) {
   const [nav, setNav]             = useState("home");
   const [patient, setPatient]     = useState(null);
+  const [clinicId, setClinicId]   = useState(null);
   const [appts, setAppts]         = useState([]);
   const [heps, setHeps]           = useState([]);
   const [plans, setPlans]         = useState([]);
@@ -977,6 +978,7 @@ function PatientApp({ user, onSignOut }) {
       if (!ptRow) { setNotFound(true); setLoading(false); return; }
       const pt = ptRow.data ?? ptRow;
       setPatient(pt);
+      setClinicId(ptRow.clinic_id || null);
 
       const pid = pt.id;
 
@@ -1087,7 +1089,7 @@ function PatientApp({ user, onSignOut }) {
         {/* Main content */}
         <div className="pp-content fade-up">
           {patient && nav === "home"         && <HomeTab patient={patient} appts={appts} heps={heps} plans={plans} claims={claims} exerciseLib={exerciseLib} onNav={setNav} onBookAppt={() => setNav("appointments")}/>}
-          {patient && nav === "appointments" && <AppointmentsTab patient={patient} appts={appts} setAppts={setAppts} providers={providers} toast={showToast}/>}
+          {patient && nav === "appointments" && <AppointmentsTab patient={patient} appts={appts} setAppts={setAppts} providers={providers} clinicId={clinicId} toast={showToast}/>}
           {patient && nav === "exercises"    && <ExercisesTab patient={patient} heps={heps} exerciseLib={exerciseLib} toast={showToast}/>}
           {patient && nav === "plan"         && <PlanTab patient={patient} plans={plans} outcomes={outcomes}/>}
           {patient && nav === "billing"      && <BillingTab claims={claims}/>}
