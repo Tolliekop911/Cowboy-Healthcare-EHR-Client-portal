@@ -68,6 +68,9 @@ const IP = {
   activity:"M22 12h-4l-3 9L9 3l-3 9H2",
   trash:"M3 6h18 M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6 M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2",
   search:"M11 17a6 6 0 100-12 6 6 0 000 12z M21 21l-4.35-4.35",
+  play:"M5 3l14 9-14 9V3z",
+  "play-circle":"M12 22a10 10 0 100-20 10 10 0 000 20z M10 8l6 4-6 4V8z",
+  edit:"M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7 M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
 };
 function Ic({ n, s = 20, c = "currentColor", sw = 1.8 }) {
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0, display:"block" }}><path d={IP[n] || ""} /></svg>;
@@ -484,7 +487,7 @@ function HomeTab({ patient, appts, heps, plans, claims, exerciseLib, onNav, onBo
               <Ic n="clipboard" s={15} c={C.teal600} sw={2}/>
               <span style={{ fontSize:11, fontWeight:700, color:C.teal600, textTransform:"uppercase", letterSpacing:0.6 }}>Active Treatment Plan</span>
             </div>
-            <button onClick={() => onNav("plan")} style={{ fontSize:12, fontWeight:600, color:C.teal600, background:"none", border:"none", cursor:"pointer" }}>View →</button>
+            <button onClick={() => onNav("exercises")} style={{ fontSize:12, fontWeight:600, color:C.teal600, background:"none", border:"none", cursor:"pointer" }}>View →</button>
           </div>
           <div style={{ padding:"14px 18px" }}>
             <p style={{ fontSize:14, fontWeight:700, color:C.g800, marginBottom:3 }}>{myPlan.title}</p>
@@ -1662,28 +1665,32 @@ function DocumentsTab({ patient, clinicId, docs, setDocs, toast }) {
     if (!upFile) return;
     setUploading(true);
     try {
-      const ext  = upFile.name.split(".").pop();
-      const path = `${clinicId}/${patient.id}/${Date.now()}.${ext}`;
+      const ext      = upFile.name.split(".").pop().toLowerCase();
+      const bucket   = clinicId || "shared";
+      const path     = `${bucket}/${patient.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const { error: stErr } = await supabase.storage.from("patient-documents").upload(path, upFile, { upsert: false });
       if (stErr) throw stErr;
+      const docId = `DOC-${Date.now()}`;
       const doc = {
-        id: `DOC-${Date.now()}`,
+        id: docId,
         pid: patient.id,
         name: upFile.name,
         category: upCat,
         size: upFile.size,
         path,
         mimeType: upFile.type,
-        note: upNote,
+        note: upNote.trim(),
         uploadedByType: "patient",
         uploadedAt: new Date().toISOString(),
         sharedWithPatient: false,
       };
-      await supabase.from("patient_documents").insert([{ id: doc.id, clinic_id: clinicId, data: doc }]);
-      setDocs(prev => [...prev, doc]);
+      const { error: dbErr } = await supabase.from("patient_documents").insert([{ id: docId, clinic_id: clinicId || null, data: doc }]);
+      if (dbErr) throw dbErr;
+      setDocs(prev => [doc, ...prev]);
       setUploadModal(false);
       setUpFile(null);
       setUpNote("");
+      setUpCat("Referral");
       toast("Document uploaded successfully!");
     } catch (e) {
       toast(e.message || "Upload failed — please try again.", "error");
@@ -1700,18 +1707,24 @@ function DocumentsTab({ patient, clinicId, docs, setDocs, toast }) {
       a.download = doc.name;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
     } catch (e) {
       toast("Could not generate download link. Please try again.", "error");
     }
   }
 
   async function deleteDoc(doc) {
-    if (!window.confirm(`Delete "${doc.name}"?`)) return;
-    await supabase.storage.from("patient-documents").remove([doc.path]);
-    await supabase.from("patient_documents").delete().eq("id", doc.id);
-    setDocs(prev => prev.filter(d => d.id !== doc.id));
-    toast("Document deleted.");
+    if (!window.confirm(`Delete "${doc.name}"? This cannot be undone.`)) return;
+    try {
+      await supabase.storage.from("patient-documents").remove([doc.path]);
+      await supabase.from("patient_documents").delete().eq("id", doc.id);
+      setDocs(prev => prev.filter(d => d.id !== doc.id));
+      toast("Document deleted.");
+    } catch (e) {
+      toast("Delete failed — please try again.", "error");
+    }
   }
 
   function DocCard({ doc }) {
@@ -2109,7 +2122,7 @@ function LegalModal({ tab: initTab, onClose }) {
         <div style={{ padding:"24px",overflowY:"auto",flex:1,fontSize:13,color:C.g600,lineHeight:1.8 }}>
           {tab === "tos" ? (
             <>
-              <h2 style={{ fontSize:18,fontWeight:800,color:C.g900,marginBottom:4 }}>Terms of Service</h2>
+              <h2 style={{ fontSize:18,fontWeight:800,color:C.g800,marginBottom:4 }}>Terms of Service</h2>
               <p style={{ fontSize:12,color:C.g400,marginBottom:20 }}>Last updated: {new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</p>
               {[
                 ["1. Acceptance","By accessing or using the Cowboy Healthcare EHR patient portal, you agree to these Terms of Service. If you do not agree, you may not use this service."],
@@ -2130,7 +2143,7 @@ function LegalModal({ tab: initTab, onClose }) {
             </>
           ) : (
             <>
-              <h2 style={{ fontSize:18,fontWeight:800,color:C.g900,marginBottom:4 }}>Privacy Policy</h2>
+              <h2 style={{ fontSize:18,fontWeight:800,color:C.g800,marginBottom:4 }}>Privacy Policy</h2>
               <p style={{ fontSize:12,color:C.g400,marginBottom:20 }}>Last updated: {new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</p>
               {[
                 ["1. Information We Collect","We collect information you provide (name, date of birth, contact details), health information entered by your provider (appointments, diagnoses, prescriptions, exercise programs), and usage data (login times, pages visited)."],
