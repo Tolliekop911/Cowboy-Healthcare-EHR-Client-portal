@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Component } from "react";
+import { useState, useEffect, useCallback, useRef, Component, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { createClient } from "@supabase/supabase-js";
 
@@ -71,6 +71,17 @@ const IP = {
   play:"M5 3l14 9-14 9V3z",
   "play-circle":"M12 22a10 10 0 100-20 10 10 0 000 20z M10 8l6 4-6 4V8z",
   edit:"M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7 M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z",
+  mic:"M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z M19 10v2a7 7 0 01-14 0v-2 M12 19v4 M8 23h8",
+  target:"M12 22a10 10 0 100-20 10 10 0 000 20z M12 18a6 6 0 100-12 6 6 0 000 12z M12 14a2 2 0 100-4 2 2 0 000 4z",
+  smile:"M12 22a10 10 0 100-20 10 10 0 000 20z M8 14s1.5 2 4 2 4-2 4-2 M9 9h.01 M15 9h.01",
+  "thumbs-up":"M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z M7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3",
+  bell:"M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 01-3.46 0",
+  "more-h":"M12 13a1 1 0 100-2 1 1 0 000 2z M19 13a1 1 0 100-2 1 1 0 000 2z M5 13a1 1 0 100-2 1 1 0 000 2z",
+  map:"M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z M12 13a3 3 0 100-6 3 3 0 000 6z",
+  award:"M12 15a7 7 0 100-14 7 7 0 000 14z M8.21 13.89L7 23l5-3 5 3-1.21-9.12",
+  "trending-up":"M23 6l-9.5 9.5-5-5L1 18",
+  heart:"M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z",
+  zap:"M13 2L3 14h9l-1 8 10-12h-9l1-8z",
 };
 function Ic({ n, s = 20, c = "currentColor", sw = 1.8 }) {
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink:0, display:"block" }}><path d={IP[n] || ""} /></svg>;
@@ -84,6 +95,168 @@ const fmtTime = t => { if (!t) return ""; const [h, m] = t.split(":"); const hr 
 const ptAge = dob => { if (!dob) return "?"; const a = Math.floor((Date.now() - new Date(dob + "T12:00:00")) / (365.25 * 864e5)); return a < 0 || a > 150 ? "?" : a; };
 const isFuture = d => d && d >= TODAY;
 const isPast   = d => d && d < TODAY;
+
+/* ── SESSION TIMEOUT MANAGER ─────────────────────────── */
+const SESSION_WARN = 25 * 60 * 1000;  // warn at 25 min idle
+const SESSION_OUT  = 30 * 60 * 1000;  // sign out at 30 min idle
+function useSessionTimeout(onSignOut) {
+  const [showWarn, setShowWarn] = useState(false);
+  const timers = useRef({});
+  const reset = useCallback(() => {
+    clearTimeout(timers.current.warn);
+    clearTimeout(timers.current.out);
+    setShowWarn(false);
+    timers.current.warn = setTimeout(() => setShowWarn(true), SESSION_WARN);
+    timers.current.out  = setTimeout(() => { setShowWarn(false); onSignOut(); }, SESSION_OUT);
+  }, [onSignOut]);
+  useEffect(() => {
+    const events = ["mousemove","keydown","click","touchstart","scroll"];
+    events.forEach(e => window.addEventListener(e, reset, { passive:true }));
+    reset();
+    return () => {
+      events.forEach(e => window.removeEventListener(e, reset));
+      clearTimeout(timers.current.warn);
+      clearTimeout(timers.current.out);
+    };
+  }, [reset]);
+  return showWarn;
+}
+
+function SessionWarningModal({ onStay, onLeave }) {
+  return ReactDOM.createPortal(
+    <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:99999,display:"flex",alignItems:"center",justifyContent:"center",padding:20 }}>
+      <div style={{ background:"#fff",borderRadius:20,padding:"28px 24px",maxWidth:360,width:"100%",boxShadow:"0 24px 80px rgba(0,0,0,.3)",textAlign:"center" }}>
+        <div style={{ width:56,height:56,borderRadius:"50%",background:C.a50,border:`2px solid ${C.a100}`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
+          <Ic n="alert" s={26} c={C.a600} sw={2}/>
+        </div>
+        <h3 style={{ fontSize:18,fontWeight:800,color:C.g800,marginBottom:8 }}>Still there?</h3>
+        <p style={{ fontSize:13,color:C.g500,lineHeight:1.6,marginBottom:24 }}>For your security, you will be signed out in 5 minutes due to inactivity.</p>
+        <div style={{ display:"flex",gap:10 }}>
+          <button onClick={onLeave} style={{ flex:1,padding:"11px",border:`1.5px solid ${C.g200}`,borderRadius:10,background:"#fff",color:C.g600,fontSize:13,fontWeight:700,cursor:"pointer" }}>Sign Out</button>
+          <button onClick={onStay} style={{ flex:1,padding:"11px",border:"none",borderRadius:10,background:C.p500,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer" }}>Stay Signed In</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/* ── BASE INPUT STYLE (needed before IST is defined below) */
+const IST_BASE = { width:"100%",padding:"9px 12px",border:`1.5px solid ${C.g200}`,borderRadius:9,fontSize:13,color:C.g800,fontFamily:"inherit",outline:"none",background:"#fff",boxSizing:"border-box" };
+
+/* ── NPS / SATISFACTION ───────────────────────────────── */
+const NPS_KEY = (pid, apptId) => `nps_done_${pid}_${apptId}`;
+function NPSCard({ patient, appts, clinicId }) {
+  // Find last completed appointment that hasn't been rated
+  const ratable = appts
+    .filter(a => (a.status === "Completed" || isPast(a.date)) && a.status !== "Cancelled")
+    .sort((a,b) => b.date.localeCompare(a.date))
+    .find(a => !localStorage.getItem(NPS_KEY(patient.id, a.id)));
+  const [rating, setRating] = useState(0);
+  const [hovered, setHovered] = useState(0);
+  const [submitted, setSubmitted] = useState(false);
+  const [review, setReview] = useState("");
+  if (!ratable || submitted) return null;
+  async function submit() {
+    if (!rating) return;
+    localStorage.setItem(NPS_KEY(patient.id, ratable.id), "1");
+    const msg = {
+      id:`NPS-${Date.now()}`, pid:patient.id,
+      fromType:"patient", fromName:`${patient.fn} ${patient.ln}`,
+      body:`VISIT RATING: ${rating}/5 stars\nAppointment: ${ratable.date} ${ratable.type}\nProvider: ${ratable.provider||"N/A"}\nComment: ${review||"No comment"}`,
+      ts:new Date().toISOString(), read:false,
+    };
+    await supabase.from("messages").insert([{ id:msg.id, clinic_id:clinicId, data:msg }]);
+    setSubmitted(true);
+    // For 5-star ratings show Google review prompt after 1.5s
+    if (rating === 5) setTimeout(() => {
+      const url = `https://search.google.com/local/writereview?placeid=YOUR_PLACE_ID`;
+      const link = document.createElement("a");
+      link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer";
+      // Don't auto-navigate — just show the prompt card handled below
+    }, 1500);
+  }
+  if (submitted && rating === 5) return (
+    <div style={{ background:`linear-gradient(135deg,${C.gr50},#f0fdf4)`,border:`1px solid ${C.gr100}`,borderRadius:16,padding:"18px 20px",marginBottom:14 }}>
+      <p style={{ fontSize:15,fontWeight:800,color:C.gr700,marginBottom:4 }}>Thank you! Would you share your experience?</p>
+      <p style={{ fontSize:13,color:C.gr600,marginBottom:14 }}>Your feedback helps others find great care.</p>
+      <a href="https://search.google.com/local/writereview?placeid=YOUR_PLACE_ID" target="_blank" rel="noopener noreferrer" style={{ display:"inline-flex",alignItems:"center",gap:8,padding:"10px 20px",background:"#fff",border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,fontWeight:700,color:"#374151",textDecoration:"none" }}>
+        <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        Leave a Google Review
+      </a>
+    </div>
+  );
+  if (submitted) return (
+    <div style={{ background:C.gr50,border:`1px solid ${C.gr100}`,borderRadius:16,padding:"16px 20px",marginBottom:14,display:"flex",alignItems:"center",gap:12 }}>
+      <div style={{ width:36,height:36,borderRadius:"50%",background:C.gr600,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Ic n="check" s={16} c="#fff" sw={2.5}/></div>
+      <div>
+        <p style={{ fontSize:14,fontWeight:700,color:C.gr700 }}>Thank you for your feedback!</p>
+        <p style={{ fontSize:12,color:C.gr600 }}>Your response has been sent to the clinic.</p>
+      </div>
+    </div>
+  );
+  return (
+    <div style={{ background:"#fff",border:`1px solid ${C.g200}`,borderRadius:16,padding:"18px 20px",marginBottom:14,boxShadow:"0 2px 12px rgba(124,58,237,0.07)" }}>
+      <p style={{ fontSize:14,fontWeight:800,color:C.g800,marginBottom:2 }}>How was your last session?</p>
+      <p style={{ fontSize:12,color:C.g400,marginBottom:14 }}>with {ratable.provider||"your therapist"} on {fmtDate(ratable.date)}</p>
+      <div style={{ display:"flex",gap:8,marginBottom:14 }}>
+        {[1,2,3,4,5].map(v=>(
+          <button key={v} onMouseEnter={()=>setHovered(v)} onMouseLeave={()=>setHovered(0)} onClick={()=>setRating(v)}
+            style={{ flex:1,fontSize:22,background:"none",border:"none",cursor:"pointer",opacity:(hovered||rating)>=v?1:0.3,transition:"opacity .1s,transform .1s",transform:(hovered||rating)>=v?"scale(1.2)":"scale(1)" }}>
+            ★
+          </button>
+        ))}
+      </div>
+      {rating > 0 && rating < 5 && (
+        <textarea value={review} onChange={e=>setReview(e.target.value)} placeholder="What could we improve? (optional)" rows={2} style={{ ...IST_BASE, resize:"none", marginBottom:12, fontSize:12 }}/>
+      )}
+      {rating > 0 && (
+        <button onClick={submit} style={{ width:"100%",padding:"10px",background:C.p500,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer" }}>
+          Submit {rating === 5 ? "— You are amazing!" : "Rating"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ── DAILY SYMPTOM CHECK-IN ───────────────────────────── */
+const CHECKIN_KEY = (pid) => `checkin_${pid}_${TODAY}`;
+function DailyCheckin({ patient, clinicId, onDone }) {
+  const [pain, setPain] = useState(5);
+  const [done, setDone] = useState(() => !!localStorage.getItem(CHECKIN_KEY(patient.id)));
+  const [saving, setSaving] = useState(false);
+  if (done) return null;
+  async function submit() {
+    setSaving(true);
+    localStorage.setItem(CHECKIN_KEY(patient.id), pain.toString());
+    const record = { id:`CI-${Date.now()}`, pid:patient.id, date:TODAY, pain, type:"daily_checkin", submittedAt:new Date().toISOString() };
+    await supabase.from("pt_outcomes").insert([{ id:record.id, clinic_id:clinicId, data:record }]);
+    setDone(true);
+    if (onDone) onDone(pain);
+    setSaving(false);
+  }
+  return (
+    <div style={{ background:`linear-gradient(135deg,${C.p50},${C.b50})`,border:`1px solid ${C.p100}`,borderRadius:16,padding:"18px 20px",marginBottom:14 }}>
+      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12 }}>
+        <div>
+          <p style={{ fontSize:14,fontWeight:800,color:C.p800,marginBottom:2 }}>How are you feeling today?</p>
+          <p style={{ fontSize:12,color:C.p500 }}>Quick pain check — takes 5 seconds</p>
+        </div>
+        <button onClick={()=>setDone(true)} style={{ background:"none",border:"none",color:C.g400,cursor:"pointer",fontSize:18,lineHeight:1 }}>×</button>
+      </div>
+      <div style={{ display:"flex",gap:5,marginBottom:14,flexWrap:"wrap" }}>
+        {Array.from({length:11},(_,i)=>i).map(v=>(
+          <button key={v} onClick={()=>setPain(v)}
+            style={{ width:36,height:36,borderRadius:8,border:`2px solid ${pain===v?(v<=3?C.gr600:v<=6?C.a600:"#dc2626"):C.g200}`,background:pain===v?(v<=3?C.gr50:v<=6?C.a50:"#fff1f2"):"transparent",color:pain===v?(v<=3?C.gr700:v<=6?C.a700:"#dc2626"):C.g500,fontWeight:800,fontSize:13,cursor:"pointer",transition:"all .1s" }}>{v}</button>
+        ))}
+      </div>
+      <p style={{ fontSize:11,color:C.g500,marginBottom:12 }}>{pain<=2?"No pain — great!":pain<=4?"Mild discomfort":pain<=6?"Moderate pain":pain<=8?"Significant pain":"Severe pain — consider calling your clinic"}</p>
+      <button onClick={submit} disabled={saving} style={{ width:"100%",padding:"10px",background:C.p500,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer" }}>
+        {saving?"Saving…":"Log Today's Pain"}
+      </button>
+    </div>
+  );
+}
 
 /* ── REGION VISUALS ───────────────────────────────────── */
 // Dot [x, y] on a 40×82 human silhouette viewBox
@@ -369,145 +542,366 @@ function SectionHead({ title, sub, action }) {
 }
 
 /* ══════════════════════════════════════════════════════
-   TAB: HOME / DASHBOARD
+   PRE-VISIT PREP CARD
 ══════════════════════════════════════════════════════ */
-function HomeTab({ patient, appts, heps, plans, claims, exerciseLib, onNav, onBookAppt }) {
-  const upcoming = appts.filter(a => isFuture(a.date) && a.status !== "Cancelled").sort((a,b) => a.date.localeCompare(b.date));
-  const nextAppt = upcoming[0];
-  const myHep    = heps[0]; // latest active HEP
-  const myPlan   = plans.find(p => p.status === "Active") || plans[0];
+const PREP_KEY = (apptId) => `prepDone_${apptId}`;
+function PreVisitPrep({ appt, patient, clinicId, onDone }) {
+  const [q1, setQ1] = useState(""); // pain change
+  const [q2, setQ2] = useState(""); // hardest exercise
+  const [q3, setQ3] = useState(""); // still struggling with
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  if (!appt || saved) return null;
+  // Only show 24-72h before appt
+  const apptMs = new Date(appt.date + "T" + (appt.time || "09:00")).getTime();
+  const diff = apptMs - Date.now();
+  if (diff < 0 || diff > 72 * 3600 * 1000) return null;
+  const hrs = Math.round(diff / 3600000);
+  async function submit() {
+    if (!q1.trim() && !q2.trim() && !q3.trim()) return;
+    setSaving(true);
+    const body = `PRE-VISIT PREP (${appt.date} ${fmtTime(appt.time)})\n\nPain change this week: ${q1||"Not answered"}\nHardest exercise: ${q2||"Not answered"}\nStill struggling with: ${q3||"Not answered"}`;
+    const msg = { id:`PREP-${Date.now()}`, pid:patient.id, fromType:"patient", fromName:`${patient.fn} ${patient.ln}`, body, ts:new Date().toISOString(), read:false };
+    await supabase.from("messages").insert([{ id:msg.id, clinic_id:clinicId, data:msg }]);
+    localStorage.setItem(PREP_KEY(appt.id), "1");
+    setSaved(true);
+    if (onDone) onDone();
+    setSaving(false);
+  }
+  return (
+    <div style={{ background:`linear-gradient(135deg,${C.teal50},#f0fdf4)`, border:`1px solid ${C.teal600}33`, borderRadius:16, padding:"18px 20px", marginBottom:14 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:12 }}>
+        <div style={{ width:34,height:34,borderRadius:9,background:C.teal600,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+          <Ic n="clipboard" s={16} c="#fff" sw={2}/>
+        </div>
+        <div>
+          <p style={{ fontSize:14,fontWeight:800,color:"#134e4a" }}>Prepare for tomorrow's session</p>
+          <p style={{ fontSize:11,color:C.teal600 }}>Appointment in {hrs} hour{hrs!==1?"s":""} · helps your therapist prepare</p>
+        </div>
+      </div>
+      {[
+        {label:"How has your pain changed this week?", val:q1, set:setQ1, ph:"e.g. A bit better after the exercises, worse after sitting long"},
+        {label:"Which exercise felt hardest?",          val:q2, set:setQ2, ph:"e.g. Quad sets — felt a pulling sensation"},
+        {label:"What are you still struggling with?",   val:q3, set:setQ3, ph:"e.g. Still hard to go up stairs without pain"},
+      ].map((item,i) => (
+        <div key={i} style={{ marginBottom:10 }}>
+          <label style={{ fontSize:11,fontWeight:700,color:"#134e4a",display:"block",marginBottom:4 }}>{item.label}</label>
+          <textarea value={item.val} onChange={e=>item.set(e.target.value)} placeholder={item.ph} rows={2} style={{ ...IST_BASE, resize:"none", fontSize:12, borderColor:C.teal600+"55" }}/>
+        </div>
+      ))}
+      <button onClick={submit} disabled={saving||(!q1.trim()&&!q2.trim()&&!q3.trim())} style={{ width:"100%",padding:"10px",background:C.teal600,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer",opacity:(!q1.trim()&&!q2.trim()&&!q3.trim())?0.5:1 }}>
+        {saving?"Sending…":"Send to My Therapist"}
+      </button>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════
+   TAB: HOME / DASHBOARD — ACTION-ORIENTED REDESIGN
+══════════════════════════════════════════════════════ */
+function HomeTab({ patient, appts, heps, plans, claims, messages, outcomes, exerciseLib, clinicId, onNav, onBookAppt, onConfirmAppt }) {
+  const upcoming    = appts.filter(a => isFuture(a.date) && a.status !== "Cancelled").sort((a,b) => a.date.localeCompare(b.date));
+  const nextAppt    = upcoming[0];
+  const myHep       = heps[0];
+  const myPlan      = plans.find(p => p.status === "Active") || plans[0];
   const unpaidBills = claims.filter(c => c.status !== "Paid" && c.status !== "Void");
+  const totalOwed   = unpaidBills.reduce((s,c)=>s+((Number(c.amount)||0)-(Number(c.paidAmt)||0)),0);
+  const unreadMsgs  = messages.filter(m => m.fromType !== "patient" && !m.read_by_patient);
+  const intakeNeeded = !patient.emergencyContact || !patient.occupation;
+  const [confirming, setConfirming] = useState(false);
+  const [confirmed, setConfirmed]   = useState(() => nextAppt ? !!localStorage.getItem(`appt_confirmed_${nextAppt.id}`) : false);
 
-  // Exercise streak from localStorage
-  const getStreak = () => {
-    let streak = 0;
-    const d = new Date();
+  // Exercise progress today
+  const doneKey = exId => `hep_done_${TODAY}_${patient.id}_${exId}`;
+  const todayExercises = myHep?.exercises || [];
+  const doneToday = todayExercises.filter(e => localStorage.getItem(doneKey(e.exId))).length;
+  const exercisesPct = todayExercises.length ? Math.round((doneToday / todayExercises.length) * 100) : 0;
+
+  // Streak
+  const streak = useMemo(() => {
+    let s = 0; const d = new Date();
     while (true) {
-      const k = `hep_done_${d.toISOString().slice(0,10)}_${patient.id}`;
-      if (!localStorage.getItem(k)) break;
-      streak++;
-      d.setDate(d.getDate() - 1);
+      if (!localStorage.getItem(`hep_done_${d.toISOString().slice(0,10)}_${patient.id}`)) break;
+      s++; d.setDate(d.getDate()-1);
     }
-    return streak;
-  };
-  const streak = getStreak();
+    return s;
+  }, [patient.id]);
 
-  const greeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 17) return "Good afternoon";
-    return "Good evening";
-  };
+  // Plain-language progress
+  const painHistory = outcomes.filter(o=>o.pain!=null).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  const initialPain = painHistory[0]?.pain;
+  const currentPain = painHistory[painHistory.length-1]?.pain;
+  const painImproved = (initialPain!=null && currentPain!=null && initialPain > 0)
+    ? Math.round(((initialPain - currentPain) / initialPain) * 100) : null;
+
+  // Days until next appt
+  const daysUntil = nextAppt ? Math.ceil((new Date(nextAppt.date+"T12:00:00") - new Date()) / 86400000) : null;
+  const showConfirmCTA = nextAppt && daysUntil !== null && daysUntil <= 2 && daysUntil >= 0 && !confirmed;
+
+  // Priority action items — ordered by urgency
+  const actionItems = [];
+  if (intakeNeeded) actionItems.push({ id:"intake", priority:"critical", icon:"clipboard", color:C.r600, bg:C.r50, border:"#fca5a5", title:"Complete your intake form", sub:"Required before your first appointment", cta:"Complete Now", onClick:()=>onNav("profile") });
+  if (unreadMsgs.length > 0) actionItems.push({ id:"msgs", priority:"high", icon:"send", color:C.p600, bg:C.p50, border:C.p200, title:`${unreadMsgs.length} unread message${unreadMsgs.length>1?"s":""}`, sub:"Your care team sent you a message", cta:"Read Now", onClick:()=>onNav("messages") });
+  if (showConfirmCTA) actionItems.push({ id:"confirm", priority:"high", icon:"calendar", color:C.b600, bg:C.b50, border:"#93c5fd", title:`Appointment ${daysUntil===0?"today":daysUntil===1?"tomorrow":`in ${daysUntil} days"}`, sub:`${fmtDateFull(nextAppt.date)} at ${fmtTime(nextAppt.time)} — please confirm`, cta:"I'll Be There", onClick:async()=>{ setConfirming(true); localStorage.setItem(`appt_confirmed_${nextAppt.id}`,"1"); await onConfirmAppt(nextAppt.id); setConfirmed(true); setConfirming(false); } });
+  if (todayExercises.length > 0 && doneToday < todayExercises.length) actionItems.push({ id:"hep", priority:"medium", icon:"dumbbell", color:C.p500, bg:C.p50, border:C.p200, title:`${todayExercises.length - doneToday} exercise${todayExercises.length-doneToday>1?"s":""} left today`, sub:`${doneToday} of ${todayExercises.length} done · ${myHep?.title||"Your program"}`, cta:"Start Now", onClick:()=>onNav("exercises") });
+  if (totalOwed > 0) actionItems.push({ id:"billing", priority:"medium", icon:"dollar", color:C.r600, bg:C.r50, border:"#fca5a5", title:`$${totalOwed.toFixed(2)} outstanding`, sub:`${unpaidBills.length} invoice${unpaidBills.length>1?"s":""} · contact clinic to pay`, cta:"View Invoices", onClick:()=>onNav("profile") });
+
+  const greeting = () => { const h = new Date().getHours(); return h<12?"Good morning":h<17?"Good afternoon":"Good evening"; };
 
   return (
-    <div style={{ padding:"0 0 24px" }}>
-      {/* Hero greeting */}
-      <div style={{ background:`linear-gradient(135deg,${C.p900} 0%,${C.p700} 55%,${C.p500} 100%)`, borderRadius:20, padding:"22px 22px 20px", marginBottom:18, position:"relative", overflow:"hidden" }}>
-        <div style={{ position:"absolute", right:-30, top:-30, width:120, height:120, borderRadius:"50%", background:"rgba(255,255,255,.06)", pointerEvents:"none" }}/>
-        <div style={{ position:"absolute", right:20, bottom:-20, width:80, height:80, borderRadius:"50%", background:"rgba(255,255,255,.04)", pointerEvents:"none" }}/>
-        <p style={{ fontSize:13, color:C.p200, fontWeight:500, marginBottom:4 }}>{greeting()},</p>
-        <h1 style={{ fontSize:22, fontWeight:800, color:"#fff", letterSpacing:"-0.5px", marginBottom:2 }}>{patient.fn} {patient.ln}</h1>
-        <p style={{ fontSize:12, color:"rgba(196,181,253,.75)" }}>
-          {patient.dob ? `${ptAge(patient.dob)} years old · ` : ""}{patient.insurance || "No insurance on file"}
-        </p>
-      </div>
+    <div style={{ paddingBottom:8 }}>
 
-      {/* Quick stats row */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:18 }}>
-        {[
-          { label:"Upcoming", value:upcoming.length, icon:"calendar", color:C.p500, bg:C.p50 },
-          { label:"Ex. Streak", value:`${streak}d`, icon:"fire", color:C.a600, bg:C.a50 },
-          { label:"Unpaid", value:unpaidBills.length, icon:"dollar", color: unpaidBills.length ? C.r600 : C.gr600, bg: unpaidBills.length ? C.r50 : C.gr50 },
-        ].map((s, i) => (
-          <div key={i} style={{ background:C.w, borderRadius:14, border:`1px solid ${C.g200}`, padding:"14px 12px", textAlign:"center", boxShadow:"0 1px 4px rgba(0,0,0,.04)" }}>
-            <div style={{ width:32, height:32, borderRadius:9, background:s.bg, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 8px" }}>
-              <Ic n={s.icon} s={16} c={s.color} sw={2}/>
+      {/* ── Hero header ── */}
+      <div style={{ background:`linear-gradient(135deg,${C.p900} 0%,${C.p700} 55%,${C.p500} 100%)`, borderRadius:20, padding:"20px 22px 18px", marginBottom:16, position:"relative", overflow:"hidden" }}>
+        <div style={{ position:"absolute",right:-20,top:-20,width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,.05)",pointerEvents:"none" }}/>
+        <div style={{ position:"absolute",right:30,bottom:-30,width:70,height:70,borderRadius:"50%",background:"rgba(255,255,255,.04)",pointerEvents:"none" }}/>
+        <p style={{ fontSize:12,color:C.p200,fontWeight:500,marginBottom:3 }}>{greeting()},</p>
+        <h1 style={{ fontSize:21,fontWeight:800,color:"#fff",letterSpacing:"-0.4px",marginBottom:10 }}>{patient.fn} {patient.ln}</h1>
+        {/* Stat chips row */}
+        <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+          {[
+            { label:`${upcoming.length} upcoming`, icon:"calendar", show:true },
+            { label:`${streak}d streak`, icon:"fire", show:streak>0 },
+            { label:`${unreadMsgs.length} messages`, icon:"send", show:unreadMsgs.length>0, alert:true },
+            { label:`$${totalOwed.toFixed(0)} due`, icon:"dollar", show:totalOwed>0, alert:true },
+          ].filter(s=>s.show).map((s,i)=>(
+            <div key={i} style={{ display:"flex",alignItems:"center",gap:5,background:s.alert?"rgba(220,38,38,.15)":"rgba(255,255,255,.12)",border:`1px solid ${s.alert?"rgba(252,165,165,.3)":"rgba(255,255,255,.15)"}`,borderRadius:20,padding:"4px 10px" }}>
+              <Ic n={s.icon} s={12} c={s.alert?"#fca5a5":"rgba(196,181,253,.9)"} sw={2}/>
+              <span style={{ fontSize:11,fontWeight:600,color:s.alert?"#fca5a5":"rgba(255,255,255,.85)" }}>{s.label}</span>
             </div>
-            <div style={{ fontSize:20, fontWeight:800, color:C.g800, lineHeight:1 }}>{s.value}</div>
-            <div style={{ fontSize:10, color:C.g400, marginTop:3, fontWeight:600, textTransform:"uppercase", letterSpacing:0.4 }}>{s.label}</div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
-      {/* Next appointment */}
+      {/* ── Daily check-in ── */}
+      <DailyCheckin patient={patient} clinicId={clinicId}/>
+
+      {/* ── NPS card ── */}
+      <NPSCard patient={patient} appts={appts} clinicId={clinicId}/>
+
+      {/* ── Priority action items ── */}
+      {actionItems.length > 0 && (
+        <div style={{ marginBottom:16 }}>
+          <p style={{ fontSize:11,fontWeight:700,color:C.g500,textTransform:"uppercase",letterSpacing:0.8,marginBottom:8 }}>Needs your attention</p>
+          {actionItems.map(item=>(
+            <div key={item.id} style={{ background:"#fff",border:`1px solid ${item.border}`,borderRadius:14,padding:"14px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:14,boxShadow:"0 1px 4px rgba(0,0,0,.05)" }}>
+              <div style={{ width:38,height:38,borderRadius:10,background:item.bg,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <Ic n={item.icon} s={18} c={item.color} sw={2}/>
+              </div>
+              <div style={{ flex:1,minWidth:0 }}>
+                <p style={{ fontSize:13,fontWeight:700,color:C.g800,marginBottom:2 }}>{item.title}</p>
+                <p style={{ fontSize:11,color:C.g500,lineHeight:1.4 }}>{item.sub}</p>
+              </div>
+              <button onClick={item.onClick} disabled={item.id==="confirm"&&confirming} style={{ flexShrink:0,padding:"7px 13px",background:item.color,color:"#fff",border:"none",borderRadius:9,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:(item.id==="confirm"&&confirming)?0.7:1 }}>
+                {item.id==="confirm"&&confirming?"Saving…":item.cta}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {actionItems.length === 0 && (
+        <div style={{ background:C.gr50,border:`1px solid ${C.gr100}`,borderRadius:14,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:12 }}>
+          <div style={{ width:36,height:36,borderRadius:"50%",background:C.gr600,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Ic n="check" s={16} c="#fff" sw={2.5}/></div>
+          <div><p style={{ fontSize:13,fontWeight:700,color:C.gr700 }}>You are all caught up!</p><p style={{ fontSize:12,color:C.gr600 }}>No action needed right now.</p></div>
+        </div>
+      )}
+
+      {/* ── Next appointment (full card) ── */}
       {nextAppt ? (
-        <Card style={{ marginBottom:14 }}>
-          <div style={{ background:`linear-gradient(135deg,${C.b50},${C.p50})`, padding:"14px 18px", borderBottom:`1px solid ${C.g100}` }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:2 }}>
-              <Ic n="calendar" s={15} c={C.p500} sw={2}/>
-              <span style={{ fontSize:11, fontWeight:700, color:C.p600, textTransform:"uppercase", letterSpacing:0.6 }}>Next Appointment</span>
+        <div style={{ background:"#fff",border:`1px solid ${C.g200}`,borderRadius:16,marginBottom:14,overflow:"hidden",boxShadow:"0 2px 12px rgba(124,58,237,0.07)" }}>
+          <div style={{ background:`linear-gradient(135deg,${C.b50},${C.p50})`,padding:"12px 18px",borderBottom:`1px solid ${C.g100}`,display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+            <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+              <Ic n="calendar" s={14} c={C.p500} sw={2}/>
+              <span style={{ fontSize:11,fontWeight:700,color:C.p600,textTransform:"uppercase",letterSpacing:0.6 }}>Next Appointment</span>
             </div>
+            {daysUntil !== null && daysUntil <= 7 && (
+              <span style={{ fontSize:11,fontWeight:700,color:C.b600,background:C.b50,border:`1px solid ${C.b100}`,borderRadius:20,padding:"2px 8px" }}>
+                {daysUntil===0?"Today":daysUntil===1?"Tomorrow":`In ${daysUntil} days`}
+              </span>
+            )}
           </div>
           <div style={{ padding:"16px 18px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10 }}>
               <div>
-                <p style={{ fontSize:15, fontWeight:700, color:C.g800 }}>{nextAppt.type}</p>
-                <p style={{ fontSize:13, color:C.g500, marginTop:3 }}>{fmtDateFull(nextAppt.date)} at {fmtTime(nextAppt.time)}</p>
-                <p style={{ fontSize:12, color:C.g400, marginTop:2 }}>with {nextAppt.provider} · {nextAppt.room}</p>
+                <p style={{ fontSize:15,fontWeight:700,color:C.g800,marginBottom:3 }}>{nextAppt.type}</p>
+                <p style={{ fontSize:13,color:C.g500 }}>{fmtDateFull(nextAppt.date)} at {fmtTime(nextAppt.time)}</p>
+                {nextAppt.provider && <p style={{ fontSize:12,color:C.g400,marginTop:2 }}>with {nextAppt.provider}{nextAppt.room&&nextAppt.room!=="TBD"?` · Room ${nextAppt.room}`:""}</p>}
               </div>
-              <Bdg label={nextAppt.status} color={apptColor(nextAppt.status)}/>
+              <Bdg label={confirmed?"Confirmed":nextAppt.status} color={confirmed?"green":apptColor(nextAppt.status)}/>
             </div>
+            {confirmed ? (
+              <div style={{ display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:C.gr50,borderRadius:10,fontSize:13,color:C.gr700,fontWeight:600 }}>
+                <Ic n="check" s={14} c={C.gr600} sw={2.5}/>Confirmed — see you then!
+              </div>
+            ) : (
+              <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8 }}>
+                <button onClick={async()=>{ setConfirming(true); localStorage.setItem(`appt_confirmed_${nextAppt.id}`,"1"); await onConfirmAppt(nextAppt.id); setConfirmed(true); setConfirming(false); }} disabled={confirming}
+                  style={{ padding:"10px",background:C.p500,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer" }}>
+                  {confirming?"Saving…":"I'll Be There"}
+                </button>
+                <button onClick={()=>onNav("appointments")} style={{ padding:"10px",background:"#fff",color:C.g600,border:`1.5px solid ${C.g200}`,borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer" }}>
+                  Reschedule
+                </button>
+              </div>
+            )}
           </div>
-        </Card>
+        </div>
       ) : (
-        <Card style={{ marginBottom:14 }}>
-          <div style={{ padding:"20px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
-            <div>
-              <p style={{ fontSize:14, fontWeight:700, color:C.g700, marginBottom:3 }}>No upcoming appointments</p>
-              <p style={{ fontSize:12, color:C.g400 }}>Book your next visit with us</p>
-            </div>
-            <button onClick={onBookAppt} style={{ padding:"8px 16px", background:C.p500, color:"#fff", border:"none", borderRadius:9, fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", flexShrink:0 }}>Book Now</button>
+        <div style={{ background:"#fff",border:`1px dashed ${C.g300}`,borderRadius:16,padding:"20px 18px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12 }}>
+          <div>
+            <p style={{ fontSize:14,fontWeight:700,color:C.g700,marginBottom:3 }}>No upcoming appointments</p>
+            <p style={{ fontSize:12,color:C.g400 }}>Ready to book your next visit?</p>
           </div>
-        </Card>
+          <button onClick={onBookAppt} style={{ padding:"9px 18px",background:C.p500,color:"#fff",border:"none",borderRadius:9,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0 }}>Book Now</button>
+        </div>
       )}
 
-      {/* HEP snapshot */}
-      {myHep && (
-        <Card style={{ marginBottom:14 }}>
-          <div style={{ padding:"14px 18px", borderBottom:`1px solid ${C.g100}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <Ic n="dumbbell" s={15} c={C.p500} sw={2}/>
-              <span style={{ fontSize:11, fontWeight:700, color:C.p600, textTransform:"uppercase", letterSpacing:0.6 }}>Today's Exercises</span>
+      {/* ── Pre-visit prep card ── */}
+      <PreVisitPrep appt={nextAppt} patient={patient} clinicId={clinicId}/>
+
+      {/* ── Today's exercises ── */}
+      {myHep && todayExercises.length > 0 && (
+        <div style={{ background:"#fff",border:`1px solid ${C.g200}`,borderRadius:16,marginBottom:14,overflow:"hidden",boxShadow:"0 2px 12px rgba(124,58,237,0.07)" }}>
+          <div style={{ padding:"12px 18px",borderBottom:`1px solid ${C.g100}`,display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+            <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+              <Ic n="dumbbell" s={14} c={C.p500} sw={2}/>
+              <span style={{ fontSize:11,fontWeight:700,color:C.p600,textTransform:"uppercase",letterSpacing:0.6 }}>Today's Exercises</span>
             </div>
-            <button onClick={() => onNav("exercises")} style={{ fontSize:12, fontWeight:600, color:C.p500, background:"none", border:"none", cursor:"pointer" }}>View All →</button>
+            <button onClick={()=>onNav("exercises")} style={{ fontSize:12,fontWeight:700,color:C.p500,background:"none",border:"none",cursor:"pointer" }}>Start Full Session →</button>
           </div>
           <div style={{ padding:"14px 18px" }}>
-            <p style={{ fontSize:14, fontWeight:700, color:C.g800, marginBottom:4 }}>{myHep.title}</p>
-            <p style={{ fontSize:12, color:C.g500 }}>{myHep.exercises?.length || 0} exercises · {myHep.exercises?.[0]?.freq || "Daily"}</p>
-            {streak > 0 && <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:6, fontSize:12, color:C.a600, fontWeight:600 }}><Ic n="fire" s={14} c={C.a600} sw={2}/>{streak}-day streak — keep it up! 🎉</div>}
+            {/* Progress bar */}
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
+              <span style={{ fontSize:13,fontWeight:600,color:C.g700 }}>{doneToday} of {todayExercises.length} done</span>
+              <span style={{ fontSize:14,fontWeight:800,color:exercisesPct===100?C.gr600:C.p500 }}>{exercisesPct}%</span>
+            </div>
+            <div style={{ height:8,background:C.g100,borderRadius:99,overflow:"hidden",marginBottom:12 }}>
+              <div style={{ height:"100%",width:`${exercisesPct}%`,background:exercisesPct===100?`linear-gradient(90deg,${C.gr600},${C.gr500})`:`linear-gradient(90deg,${C.p600},${C.p400})`,borderRadius:99,transition:"width .4s" }}/>
+            </div>
+            {/* First 2 exercises inline */}
+            {todayExercises.slice(0,2).map((ex,i)=>{
+              const lib = exerciseLib.find(e=>e.id===ex.exId)||{};
+              const done = !!localStorage.getItem(doneKey(ex.exId));
+              return (
+                <div key={i} style={{ display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderTop:i>0?`1px solid ${C.g50}`:"none" }}>
+                  <ExRegionSVG region={lib.region} isDone={done}/>
+                  <div style={{ flex:1,minWidth:0 }}>
+                    <p style={{ fontSize:13,fontWeight:700,color:done?C.g400:C.g800,textDecoration:done?"line-through":"none" }}>{lib.name||ex.exId}</p>
+                    <p style={{ fontSize:11,color:C.g400 }}>{ex.sets&&`${ex.sets}×`}{ex.reps&&`${ex.reps} reps`}{ex.hold&&` · ${ex.hold}s hold`}</p>
+                  </div>
+                  {done && <div style={{ width:22,height:22,borderRadius:"50%",background:C.gr600,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Ic n="check" s={11} c="#fff" sw={3}/></div>}
+                </div>
+              );
+            })}
+            {todayExercises.length > 2 && (
+              <button onClick={()=>onNav("exercises")} style={{ width:"100%",marginTop:10,padding:"9px",background:C.p50,border:`1.5px solid ${C.p200}`,borderRadius:10,color:C.p700,fontSize:12,fontWeight:700,cursor:"pointer" }}>
+                + {todayExercises.length-2} more exercises
+              </button>
+            )}
+            {exercisesPct===100 && (
+              <div style={{ marginTop:10,padding:"10px 14px",background:C.gr50,borderRadius:10,display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.gr700,fontWeight:700 }}>
+                <Ic n="award" s={16} c={C.gr600} sw={2}/>All done for today — excellent work!
+              </div>
+            )}
           </div>
-        </Card>
+        </div>
+      )}
+      {myHep && todayExercises.length === 0 && (
+        <div style={{ background:"#fff",border:`1px solid ${C.g200}`,borderRadius:16,padding:"16px 18px",marginBottom:14 }}>
+          <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+            <Ic n="dumbbell" s={16} c={C.g400} sw={1.8}/>
+            <div><p style={{ fontSize:13,fontWeight:600,color:C.g600 }}>Rest day today</p><p style={{ fontSize:11,color:C.g400 }}>No exercises scheduled</p></div>
+          </div>
+        </div>
       )}
 
-      {/* Active plan */}
-      {myPlan && (
-        <Card style={{ marginBottom:14 }}>
-          <div style={{ padding:"14px 18px", borderBottom:`1px solid ${C.g100}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <Ic n="clipboard" s={15} c={C.teal600} sw={2}/>
-              <span style={{ fontSize:11, fontWeight:700, color:C.teal600, textTransform:"uppercase", letterSpacing:0.6 }}>Active Treatment Plan</span>
+      {/* ── Progress (plain language) ── */}
+      {painImproved !== null && (
+        <div style={{ background:painImproved>0?`linear-gradient(135deg,${C.gr50},#f0fdf4)`:`linear-gradient(135deg,${C.a50},#fffbeb)`, border:`1px solid ${painImproved>0?C.gr100:C.a100}`, borderRadius:16, padding:"16px 18px", marginBottom:14 }}>
+          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:8 }}>
+            <Ic n="trending-up" s={16} c={painImproved>0?C.gr600:C.a600} sw={2}/>
+            <span style={{ fontSize:11,fontWeight:700,color:painImproved>0?C.gr700:C.a700,textTransform:"uppercase",letterSpacing:0.6 }}>Your Progress</span>
+          </div>
+          {painImproved > 0 ? (
+            <>
+              <p style={{ fontSize:22,fontWeight:800,color:C.gr700,marginBottom:4 }}>Pain down {painImproved}%</p>
+              <p style={{ fontSize:13,color:C.gr600,lineHeight:1.5 }}>Your pain has gone from <strong>{initialPain}/10</strong> to <strong>{currentPain}/10</strong> since you started. Keep it up — you're on track.</p>
+            </>
+          ) : painImproved < 0 ? (
+            <>
+              <p style={{ fontSize:20,fontWeight:800,color:C.a700,marginBottom:4 }}>Pain has increased slightly</p>
+              <p style={{ fontSize:13,color:C.a700,lineHeight:1.5 }}>From {initialPain}/10 to {currentPain}/10. Let your therapist know at your next session.</p>
+            </>
+          ) : (
+            <p style={{ fontSize:13,color:C.gr600 }}>Pain holding steady at {currentPain}/10. Early days — keep doing your exercises.</p>
+          )}
+          <button onClick={()=>onNav("outcomes")} style={{ marginTop:10,padding:"7px 14px",background:"rgba(0,0,0,.06)",border:"none",borderRadius:8,fontSize:12,fontWeight:700,color:painImproved>0?C.gr700:C.a700,cursor:"pointer" }}>See Full Progress →</button>
+        </div>
+      )}
+
+      {/* ── Messages preview ── */}
+      {unreadMsgs.length > 0 && (
+        <div style={{ background:"#fff",border:`1px solid ${C.p200}`,borderRadius:16,marginBottom:14,overflow:"hidden",boxShadow:"0 2px 8px rgba(124,58,237,.08)" }}>
+          <div style={{ padding:"12px 18px",borderBottom:`1px solid ${C.g100}`,display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+            <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+              <Ic n="send" s={14} c={C.p500} sw={2}/>
+              <span style={{ fontSize:11,fontWeight:700,color:C.p600,textTransform:"uppercase",letterSpacing:0.6 }}>New Messages</span>
             </div>
-            <button onClick={() => onNav("exercises")} style={{ fontSize:12, fontWeight:600, color:C.teal600, background:"none", border:"none", cursor:"pointer" }}>View →</button>
+            <div style={{ background:C.r600,color:"#fff",borderRadius:99,padding:"1px 7px",fontSize:11,fontWeight:800 }}>{unreadMsgs.length}</div>
           </div>
           <div style={{ padding:"14px 18px" }}>
-            <p style={{ fontSize:14, fontWeight:700, color:C.g800, marginBottom:3 }}>{myPlan.title}</p>
-            <p style={{ fontSize:12, color:C.g500 }}>{myPlan.phase} · Started {fmtDate(myPlan.startDate)}</p>
+            {unreadMsgs.slice(0,2).map((m,i)=>(
+              <div key={m.id} style={{ paddingBottom:i<unreadMsgs.slice(0,2).length-1?10:0, marginBottom:i<unreadMsgs.slice(0,2).length-1?10:0, borderBottom:i<unreadMsgs.slice(0,2).length-1?`1px solid ${C.g100}`:"none" }}>
+                <p style={{ fontSize:12,fontWeight:700,color:C.g700 }}>{m.fromName||"Your clinic"}</p>
+                <p style={{ fontSize:12,color:C.g500,marginTop:2,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical" }}>{m.body}</p>
+              </div>
+            ))}
+            <button onClick={()=>onNav("messages")} style={{ marginTop:12,width:"100%",padding:"9px",background:C.p500,color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer" }}>
+              Reply to Messages
+            </button>
           </div>
-        </Card>
+        </div>
       )}
 
-      {/* Quick access — Documents & Outcomes (especially useful on mobile) */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginTop:4 }}>
+      {/* ── Outstanding balance ── */}
+      {totalOwed > 0 && (
+        <div style={{ background:`linear-gradient(135deg,${C.r50},#fff1f2)`, border:"1px solid #fca5a5", borderRadius:16, padding:"14px 18px", marginBottom:14, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div>
+            <p style={{ fontSize:12,fontWeight:700,color:C.r600,textTransform:"uppercase",letterSpacing:0.5,marginBottom:2 }}>Outstanding Balance</p>
+            <p style={{ fontSize:11,color:"#ef4444" }}>Contact your clinic to arrange payment.</p>
+          </div>
+          <p style={{ fontSize:24,fontWeight:800,color:C.r600,flexShrink:0 }}>${totalOwed.toFixed(2)}</p>
+        </div>
+      )}
+
+      {/* ── Streak milestone ── */}
+      {streak > 0 && (
+        <div style={{ background:`linear-gradient(135deg,${C.a50},#fffbeb)`, border:`1px solid ${C.a100}`, borderRadius:14, padding:"12px 16px", marginBottom:14, display:"flex", alignItems:"center", gap:12 }}>
+          <div style={{ fontSize:24, flexShrink:0 }}>
+            {streak>=30?"🏆":streak>=14?"🥇":streak>=7?"🔥":"✨"}
+          </div>
+          <div>
+            <p style={{ fontSize:13,fontWeight:800,color:C.a700 }}>{streak}-day exercise streak{streak>=30?" — Incredible!":streak>=14?" — Outstanding!":streak>=7?" — Amazing work!":""}</p>
+            <p style={{ fontSize:11,color:C.a600 }}>{streak>=30?"You're in the top 5% of patients":"Keep going — consistency is everything"}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Quick nav grid ── */}
+      <p style={{ fontSize:11,fontWeight:700,color:C.g500,textTransform:"uppercase",letterSpacing:0.8,marginBottom:8 }}>Quick Access</p>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
         {[
-          { id:"documents", icon:"folder",   label:"Documents",      sub:"Upload & view files",   color:C.b600,  bg:C.b50 },
-          { id:"outcomes",  icon:"activity", label:"Outcomes",       sub:"Track your progress",   color:C.p600,  bg:C.p50 },
-        ].map(item => (
-          <button key={item.id} onClick={() => onNav(item.id)} style={{ background:C.w, border:`1px solid ${C.g200}`, borderRadius:14, padding:"14px 14px", textAlign:"left", cursor:"pointer", boxShadow:"0 1px 4px rgba(0,0,0,.04)", display:"flex", flexDirection:"column", gap:6 }}>
-            <div style={{ width:34, height:34, borderRadius:9, background:item.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          { id:"appointments", icon:"calendar",  label:"Appointments", sub:`${upcoming.length} upcoming`,    color:C.p600,  bg:C.p50 },
+          { id:"exercises",    icon:"dumbbell",   label:"Exercises",    sub:myHep?`${todayExercises.length} today`:"No program", color:C.teal600, bg:C.teal50 },
+          { id:"documents",    icon:"folder",     label:"Documents",    sub:"Upload & view files",            color:C.b600,  bg:C.b50 },
+          { id:"outcomes",     icon:"activity",   label:"Progress",     sub:"Scores & trends",                color:C.a600,  bg:C.a50 },
+        ].map(item=>(
+          <button key={item.id} onClick={()=>onNav(item.id)} style={{ background:"#fff",border:`1px solid ${C.g200}`,borderRadius:14,padding:"14px",textAlign:"left",cursor:"pointer",boxShadow:"0 1px 4px rgba(0,0,0,.04)",display:"flex",flexDirection:"column",gap:6 }}>
+            <div style={{ width:34,height:34,borderRadius:9,background:item.bg,display:"flex",alignItems:"center",justifyContent:"center" }}>
               <Ic n={item.icon} s={17} c={item.color} sw={2}/>
             </div>
-            <p style={{ fontSize:13, fontWeight:700, color:C.g800 }}>{item.label}</p>
-            <p style={{ fontSize:11, color:C.g400 }}>{item.sub}</p>
+            <p style={{ fontSize:13,fontWeight:700,color:C.g800 }}>{item.label}</p>
+            <p style={{ fontSize:11,color:C.g400 }}>{item.sub}</p>
           </button>
         ))}
       </div>
@@ -616,11 +1010,15 @@ function AppointmentsTab({ patient, appts, setAppts, allAppts, setAllAppts, prov
 
   function ApptCard({ a }) {
     const isUpcoming = isFuture(a.date) && a.status !== "Cancelled" && a.status !== "Completed";
+    const [confirmed, setConfirmed] = useState(() => !!localStorage.getItem(`appt_confirmed_${a.id}`));
+    const [savingConfirm, setSavingConfirm] = useState(false);
+    const daysUntil = Math.ceil((new Date(a.date+"T12:00:00") - new Date()) / 86400000);
+    const showConfirmCTA = isUpcoming && daysUntil <= 2 && daysUntil >= 0 && !confirmed;
     return (
-      <div style={{ background:C.w, borderRadius:14, border:`1px solid ${C.g200}`, padding:"14px 16px", marginBottom:10, boxShadow:"0 1px 4px rgba(0,0,0,.04)" }}>
+      <div style={{ background:C.w, borderRadius:14, border:`1px solid ${confirmed?C.gr100:C.g200}`, padding:"14px 16px", marginBottom:10, boxShadow:"0 1px 4px rgba(0,0,0,.04)" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
           <p style={{ fontSize:14, fontWeight:700, color:C.g800 }}>{a.type}</p>
-          <Bdg label={a.status} color={apptColor(a.status)}/>
+          <Bdg label={confirmed?"Confirmed":a.status} color={confirmed?"green":apptColor(a.status)}/>
         </div>
         <div style={{ display:"flex", flexDirection:"column", gap:3, marginBottom: isUpcoming ? 12 : 0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:7, fontSize:13, color:C.g600 }}>
@@ -635,9 +1033,22 @@ function AppointmentsTab({ patient, appts, setAppts, allAppts, setAllAppts, prov
           {a.cancelReason && <p style={{ fontSize:11, color:C.g400, fontStyle:"italic", marginTop:2 }}>Reason: {a.cancelReason}</p>}
         </div>
         {isUpcoming && (
-          <div style={{ display:"flex", gap:8, borderTop:`1px solid ${C.g100}`, paddingTop:10 }}>
-            <button onClick={()=>{ setRescheduleId(a.id); setType(a.type); setProv(a.provider||""); setDate(""); setTime(""); setNotes(""); setShowBook(true); }} style={{ flex:1, padding:"7px", border:`1.5px solid ${C.p200}`, borderRadius:9, background:C.p50, color:C.p700, fontSize:12, fontWeight:700, cursor:"pointer" }}>Reschedule</button>
-            <button onClick={()=>{ setCancelModal({ id:a.id }); setCancelReason(""); }} style={{ flex:1, padding:"7px", border:"1.5px solid #fca5a5", borderRadius:9, background:C.r50, color:"#dc2626", fontSize:12, fontWeight:700, cursor:"pointer" }}>Cancel</button>
+          <div style={{ borderTop:`1px solid ${C.g100}`, paddingTop:10 }}>
+            {showConfirmCTA && (
+              <button onClick={async()=>{ setSavingConfirm(true); localStorage.setItem(`appt_confirmed_${a.id}`,"1"); const updated={...a,confirmStatus:"confirmed"}; await supabase.from("appointments").update({data:updated}).match({id:a.id}); setAppts(p=>p.map(x=>x.id===a.id?updated:x)); setConfirmed(true); setSavingConfirm(false); toast("Appointment confirmed!"); }}
+                disabled={savingConfirm} style={{ width:"100%", marginBottom:8, padding:"10px", background:C.p500, color:"#fff", border:"none", borderRadius:9, fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                {savingConfirm?"Saving…":"I'll Be There — Confirm Attendance"}
+              </button>
+            )}
+            {confirmed && (
+              <div style={{ marginBottom:8, display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:C.gr50, borderRadius:9, fontSize:13, color:C.gr700, fontWeight:600 }}>
+                <Ic n="check" s={13} c={C.gr600} sw={2.5}/>Confirmed — see you then!
+              </div>
+            )}
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={()=>{ setRescheduleId(a.id); setType(a.type); setProv(a.provider||""); setDate(""); setTime(""); setNotes(""); setShowBook(true); }} style={{ flex:1, padding:"7px", border:`1.5px solid ${C.p200}`, borderRadius:9, background:C.p50, color:C.p700, fontSize:12, fontWeight:700, cursor:"pointer" }}>Reschedule</button>
+              <button onClick={()=>{ setCancelModal({ id:a.id }); setCancelReason(""); }} style={{ flex:1, padding:"7px", border:"1.5px solid #fca5a5", borderRadius:9, background:C.r50, color:"#dc2626", fontSize:12, fontWeight:700, cursor:"pointer" }}>Cancel</button>
+            </div>
           </div>
         )}
       </div>
@@ -948,9 +1359,14 @@ function VideoLibrary({ exerciseLib }) {
   );
 }
 
-function ExercisesTab({ patient, heps, exerciseLib, plans, outcomes, toast }) {
-  const [subTab, setSubTab] = useState("program");
-  const [selHep, setSelHep] = useState(heps[0]?.id || null);
+function ExercisesTab({ patient, heps, exerciseLib, plans, outcomes, toast, clinicId }) {
+  const [subTab, setSubTab]       = useState("program");
+  const [selHep, setSelHep]       = useState(heps[0]?.id || null);
+  const [painCapture, setPainCapture] = useState(null); // { exId, exName } — show pain slider after marking done
+  const [painVal, setPainVal]     = useState(5);
+  const [savingPain, setSavingPain] = useState(false);
+  const [flagging, setFlagging]   = useState(null); // exId being flagged
+
   const hep = heps.find(h => h.id === selHep) || heps[0];
 
   const doneKey = (exId) => `hep_done_${TODAY}_${patient.id}_${exId}`;
@@ -968,12 +1384,44 @@ function ExercisesTab({ patient, heps, exerciseLib, plans, outcomes, toast }) {
     setDone(d);
   }, [selHep]);
 
-  function toggleDone(exId) {
+  // Also set global daily done flag for streak tracking
+  function markDailyDone() {
+    localStorage.setItem(`hep_done_${TODAY}_${patient.id}`, "1");
+  }
+
+  function toggleDone(exId, exName) {
     const key = doneKey(exId);
     const nowDone = !done[exId];
-    if (nowDone) { localStorage.setItem(key, "1"); } else { localStorage.removeItem(key); }
+    if (nowDone) {
+      localStorage.setItem(key, "1");
+      markDailyDone();
+      setPainCapture({ exId, exName });
+      setPainVal(5);
+    } else {
+      localStorage.removeItem(key);
+    }
     setDone(p => ({ ...p, [exId]: nowDone }));
-    if (nowDone) toast("Exercise marked complete! 💪", "success");
+    if (nowDone) toast("Exercise marked complete!", "success");
+  }
+
+  async function submitPain() {
+    if (!painCapture) return;
+    setSavingPain(true);
+    const record = { id:`OC-${Date.now()}`, pid:patient.id, type:"post_exercise_pain", exId:painCapture.exId, exName:painCapture.exName, pain:painVal, date:TODAY, ts:new Date().toISOString() };
+    await supabase.from("pt_outcomes").insert([{ id:record.id, clinic_id:clinicId, data:record }]);
+    setSavingPain(false);
+    setPainCapture(null);
+    toast("Pain level recorded — your therapist will see this.", "success");
+  }
+
+  async function flagExercise(exId, exName) {
+    setFlagging(exId);
+    const msgId = `FLAG-${Date.now()}`;
+    const body = `EXERCISE FLAG: Patient reports "${exName}" is causing pain or difficulty. Please review this exercise.`;
+    const msg = { id:msgId, pid:patient.id, fromType:"patient", fromName:`${patient.fn} ${patient.ln}`, body, ts:new Date().toISOString(), read:false, flagType:"exercise_concern" };
+    await supabase.from("messages").insert([{ id:msgId, clinic_id:clinicId, data:msg }]);
+    setFlagging(null);
+    toast("Message sent to your care team.", "success");
   }
 
   const videoCount = exerciseLib.filter(e => e.videoUrl).length;
@@ -1075,10 +1523,30 @@ function ExercisesTab({ patient, heps, exerciseLib, plans, outcomes, toast }) {
                           ))}
                         </div>
                         {libEx.region && <p style={{ fontSize:11, color:C.g400, marginBottom:10 }}>🎯 {libEx.region} · {libEx.category}</p>}
-                        <button onClick={() => toggleDone(ex.exId)} style={{ width:"100%", padding:"9px", border:`1.5px solid ${isDone?C.gr600:C.p300}`, borderRadius:9, background:isDone?C.gr600:C.w, color:isDone?"#fff":C.p600, fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6, transition:"all .2s" }}>
-                          <Ic n={isDone?"check":"repeat"} s={14} c={isDone?"#fff":C.p600} sw={2.5}/>
-                          {isDone ? "Done for today" : "Mark Complete"}
-                        </button>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr auto", gap:8 }}>
+                          <button onClick={() => toggleDone(ex.exId, libEx.name||ex.exId)} style={{ padding:"9px", border:`1.5px solid ${isDone?C.gr600:C.p300}`, borderRadius:9, background:isDone?C.gr600:C.w, color:isDone?"#fff":C.p600, fontSize:13, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6, transition:"all .2s" }}>
+                            <Ic n={isDone?"check":"repeat"} s={14} c={isDone?"#fff":C.p600} sw={2.5}/>
+                            {isDone ? "Done for today" : "Mark Complete"}
+                          </button>
+                          <button onClick={() => flagExercise(ex.exId, libEx.name||ex.exId)} disabled={flagging===ex.exId} title="Report pain or difficulty with this exercise" style={{ padding:"9px 12px", border:`1.5px solid #fca5a5`, borderRadius:9, background:C.r50, color:C.r600, fontSize:12, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", gap:4, whiteSpace:"nowrap", transition:"all .2s", opacity:flagging===ex.exId?0.6:1 }}>
+                            <Ic n="heart" s={13} c={C.r600} sw={2}/>
+                            {flagging===ex.exId?"…":"Hurts?"}
+                          </button>
+                        </div>
+                        {/* Post-exercise pain capture — shown inline after marking done */}
+                        {painCapture?.exId === ex.exId && (
+                          <div style={{ marginTop:12, background:C.p50, border:`1.5px solid ${C.p200}`, borderRadius:12, padding:"14px 16px" }}>
+                            <p style={{ fontSize:13, fontWeight:700, color:C.p700, marginBottom:8 }}>How do you feel after this exercise? (0 = no pain, 10 = severe)</p>
+                            <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:10 }}>
+                              <input type="range" min={0} max={10} value={painVal} onChange={e=>setPainVal(Number(e.target.value))} style={{ flex:1, accentColor:C.p500 }}/>
+                              <div style={{ width:40, height:40, borderRadius:10, background:painVal>=7?C.r600:painVal>=4?C.a600:C.gr600, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:800, color:"#fff", flexShrink:0 }}>{painVal}</div>
+                            </div>
+                            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                              <button onClick={submitPain} disabled={savingPain} style={{ padding:"9px", background:C.p500, color:"#fff", border:"none", borderRadius:9, fontSize:12, fontWeight:700, cursor:"pointer" }}>{savingPain?"Saving…":"Record & Continue"}</button>
+                              <button onClick={()=>setPainCapture(null)} style={{ padding:"9px", background:"#fff", color:C.g500, border:`1.5px solid ${C.g200}`, borderRadius:9, fontSize:12, fontWeight:700, cursor:"pointer" }}>Skip</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -2189,10 +2657,16 @@ function PatientApp({ user, onSignOut }) {
   const [notFound, setNotFound]   = useState(false);
   const [toast, setToastState]    = useState(null);
   const [legalTab, setLegalTab]   = useState(null);  // "tos" | "privacy" | null
+  const [moreOpen, setMoreOpen]   = useState(false); // mobile "More" drawer
 
   const showToast = useCallback((msg, type = "success") => {
     setToastState({ msg, type, key: Date.now() });
   }, []);
+
+  // Session timeout
+  const showSessionWarn = useSessionTimeout(useCallback(() => {
+    doSignOut();
+  }, []));
 
   useEffect(() => {
     async function load() {
@@ -2424,6 +2898,7 @@ function PatientApp({ user, onSignOut }) {
           )}
         </aside>
         {legalTab && <LegalModal tab={legalTab} onClose={()=>setLegalTab(null)}/>}
+        {showSessionWarn && <SessionWarningModal onStay={()=>{ /* reset is automatic via events */ }} onSignOut={doSignOut}/>}
 
         {/* ── Mobile Header (hidden on desktop via margin-left shift) ── */}
         <div className="pp-header">
@@ -2443,18 +2918,24 @@ function PatientApp({ user, onSignOut }) {
           </div>
           {patient && (
             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              {/* Unread message bell */}
+              {messages.filter(m=>m.fromType!=="patient"&&!m.read_by_patient).length > 0 && (
+                <button onClick={()=>setNav("messages")} style={{ position:"relative",background:"none",border:"none",cursor:"pointer",padding:4,borderRadius:8 }}>
+                  <Ic n="send" s={18} c={C.p500} sw={2}/>
+                  <div style={{ position:"absolute",top:0,right:0,width:9,height:9,background:C.r600,borderRadius:"50%",border:"2px solid #f8f7ff" }}/>
+                </button>
+              )}
               <div style={{ width:30, height:30, borderRadius:"50%", background:`linear-gradient(135deg,${C.p500},${C.p300})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800, color:"#fff" }}>
                 {`${patient.fn?.[0]||""}${patient.ln?.[0]||""}`.toUpperCase()}
               </div>
-              <span style={{ fontSize:13, fontWeight:600, color:C.g700 }}>{patient.fn}</span>
             </div>
           )}
         </div>
 
         {/* Main content */}
         <div className="pp-content fade-up">
-          {patient && nav === "home"         && <HomeTab patient={patient} appts={appts} heps={heps} plans={plans} claims={claims} exerciseLib={exerciseLib} onNav={setNav} onBookAppt={() => setNav("appointments")}/>}
-          {patient && nav === "exercises"    && <ExercisesTab patient={patient} heps={heps} exerciseLib={exerciseLib} plans={plans} outcomes={outcomes} toast={showToast}/>}
+          {patient && nav === "home"         && <HomeTab patient={patient} appts={appts} heps={heps} plans={plans} claims={claims} messages={messages} outcomes={outcomes} exerciseLib={exerciseLib} clinicId={clinicId} onNav={setNav} onBookAppt={() => setNav("appointments")} onConfirmAppt={async(apptId)=>{ const appt=appts.find(a=>a.id===apptId); if(!appt)return; const updated={...appt,confirmStatus:"confirmed"}; await supabase.from("appointments").update({data:updated}).match({id:apptId}); setAppts(prev=>prev.map(a=>a.id===apptId?updated:a)); showToast("Appointment confirmed!"); }}/>}
+          {patient && nav === "exercises"    && <ExercisesTab patient={patient} heps={heps} exerciseLib={exerciseLib} plans={plans} outcomes={outcomes} toast={showToast} clinicId={clinicId}/>}
           {patient && nav === "messages"     && <MessagesTab patient={patient} user={user} messages={messages} setMessages={setMessages} clinicId={clinicId}/>}
           {patient && nav === "appointments" && <AppointmentsTab patient={patient} appts={appts} setAppts={setAppts} allAppts={allAppts} setAllAppts={setAllAppts} providers={providers} clinicId={clinicId} toast={showToast}/>}
           {patient && nav === "profile"      && <ProfileTab patient={patient} user={user} onSignOut={onSignOut} onLegal={setLegalTab} clinicId={clinicId} claims={claims}/>}
@@ -2462,20 +2943,49 @@ function PatientApp({ user, onSignOut }) {
           {patient && nav === "outcomes"     && <OutcomesTab patient={patient} clinicId={clinicId} outcomes={outcomes} setOutcomes={setOutcomes} toast={showToast}/>}
         </div>
 
-        {/* Mobile bottom nav — first 5 items only (documents & outcomes in desktop sidebar) */}
+        {/* Mobile bottom nav — 5 main items + More */}
         <nav className="pp-nav">
           {NAV.filter(item => !item.desktopOnly).map(item => {
             const active = nav === item.id;
+            const unreadCount = item.id === "messages" ? messages.filter(m=>m.fromType!=="patient"&&!m.read_by_patient).length : 0;
             return (
               <button key={item.id} className="pp-nav-btn" onClick={() => setNav(item.id)}>
-                <div style={{ width:36, height:28, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", background:active?C.p100:"transparent", transition:"background .15s" }}>
+                <div style={{ position:"relative", width:36, height:28, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", background:active?C.p100:"transparent", transition:"background .15s" }}>
                   <Ic n={item.icon} s={18} c={active?C.p600:C.g400} sw={active?2.2:1.8}/>
+                  {unreadCount > 0 && <div style={{ position:"absolute",top:2,right:4,width:8,height:8,background:C.r600,borderRadius:"50%",border:"1.5px solid #fff" }}/>}
                 </div>
                 <span style={{ fontSize:10, fontWeight: active?700:500, color:active?C.p600:C.g400, letterSpacing:0.1 }}>{item.label}</span>
               </button>
             );
           })}
+          {/* More button — reveals Documents & Outcomes */}
+          <button className="pp-nav-btn" onClick={() => setMoreOpen(v=>!v)}>
+            <div style={{ width:36, height:28, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", background:moreOpen?C.p100:"transparent", transition:"background .15s" }}>
+              <Ic n="more-h" s={18} c={moreOpen?C.p600:C.g400} sw={moreOpen?2.2:1.8}/>
+            </div>
+            <span style={{ fontSize:10, fontWeight:moreOpen?700:500, color:moreOpen?C.p600:C.g400, letterSpacing:0.1 }}>More</span>
+          </button>
         </nav>
+
+        {/* More drawer */}
+        {moreOpen && (
+          <div style={{ position:"fixed",bottom:80,left:0,right:0,background:"#fff",borderTop:`1px solid ${C.g200}`,boxShadow:"0 -8px 24px rgba(0,0,0,.12)",zIndex:199,padding:"12px 16px 16px",display:"flex",gap:10 }}>
+            {NAV.filter(item=>item.desktopOnly).map(item=>{
+              const active = nav === item.id;
+              return (
+                <button key={item.id} onClick={()=>{ setNav(item.id); setMoreOpen(false); }} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6, padding:"12px 8px", background:active?C.p50:"#f8f7ff", border:`1.5px solid ${active?C.p300:C.g100}`, borderRadius:14, cursor:"pointer" }}>
+                  <div style={{ width:36,height:36,borderRadius:10,background:active?C.p100:C.g100,display:"flex",alignItems:"center",justifyContent:"center" }}>
+                    <Ic n={item.icon} s={18} c={active?C.p600:C.g500} sw={2}/>
+                  </div>
+                  <span style={{ fontSize:12,fontWeight:700,color:active?C.p700:C.g600 }}>{item.label}</span>
+                </button>
+              );
+            })}
+            <button onClick={()=>setMoreOpen(false)} style={{ position:"absolute",top:8,right:12,background:"none",border:"none",cursor:"pointer",fontSize:18,color:C.g400,lineHeight:1 }}>x</button>
+          </div>
+        )}
+        {/* Tap outside to close More drawer */}
+        {moreOpen && <div style={{ position:"fixed",inset:0,zIndex:198 }} onClick={()=>setMoreOpen(false)}/>}
 
         {/* Toast */}
         {toast && <Toast key={toast.key} msg={toast.msg} type={toast.type} onDone={() => setToastState(null)}/>}
