@@ -490,7 +490,7 @@ function Toast({ msg, type = "success", onDone }) {
   const colors = { success: [C.gr50, C.gr600, "#a7f3d0"], error: [C.r50, C.r600, "#fca5a5"], info: [C.b50, C.b600, "#93c5fd"] };
   const [bg, tc, bd] = colors[type] || colors.success;
   return (
-    <div style={{ position:"fixed", bottom:90, left:"50%", transform:"translateX(-50%)", zIndex:9999, background:bg, border:`1px solid ${bd}`, color:tc, borderRadius:12, padding:"11px 18px", fontSize:13, fontWeight:600, boxShadow:"0 4px 20px rgba(0,0,0,.15)", display:"flex", alignItems:"center", gap:8, whiteSpace:"nowrap", animation:"fadeUp .25s ease both" }}>
+    <div style={{ position:"fixed", bottom:"calc(80px + env(safe-area-inset-bottom, 0px) + 10px)", left:"50%", transform:"translateX(-50%)", zIndex:9999, background:bg, border:`1px solid ${bd}`, color:tc, borderRadius:12, padding:"11px 18px", fontSize:13, fontWeight:600, boxShadow:"0 4px 20px rgba(0,0,0,.15)", display:"flex", alignItems:"center", gap:8, whiteSpace:"nowrap", animation:"fadeUp .25s ease both" }}>
       <Ic n={type === "error" ? "alert" : "check"} s={15} c={tc} sw={2.5}/>
       {msg}
     </div>
@@ -1362,10 +1362,13 @@ function VideoLibrary({ exerciseLib }) {
 function ExercisesTab({ patient, heps, exerciseLib, plans, outcomes, toast, clinicId }) {
   const [subTab, setSubTab]       = useState("program");
   const [selHep, setSelHep]       = useState(heps[0]?.id || null);
-  const [painCapture, setPainCapture] = useState(null); // { exId, exName } — show pain slider after marking done
+  const [painCapture, setPainCapture] = useState(null);
   const [painVal, setPainVal]     = useState(5);
   const [savingPain, setSavingPain] = useState(false);
-  const [flagging, setFlagging]   = useState(null); // exId being flagged
+  const [flagging, setFlagging]   = useState(null);
+  const [speaking, setSpeaking]   = useState(false);
+  const [speakIdx, setSpeakIdx]   = useState(-1); // index of currently spoken exercise
+  const synthRef = useRef(null);
 
   const hep = heps.find(h => h.id === selHep) || heps[0];
 
@@ -1424,6 +1427,61 @@ function ExercisesTab({ patient, heps, exerciseLib, plans, outcomes, toast, clin
     toast("Message sent to your care team.", "success");
   }
 
+  // ── Voice guidance (Web Speech API) ──────────────────
+  const voiceSupported = typeof window !== "undefined" && "speechSynthesis" in window;
+
+  function stopVoice() {
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    setSpeaking(false);
+    setSpeakIdx(-1);
+  }
+
+  function speakExercise(exercises, index) {
+    if (!voiceSupported || index >= exercises.length) {
+      setSpeaking(false); setSpeakIdx(-1); return;
+    }
+    const ex = exercises[index];
+    const lib = exerciseLib.find(e => e.id === ex.exId) || {};
+    const name = lib.name || ex.exId;
+    const sets = ex.sets ? `${ex.sets} set${ex.sets > 1 ? "s" : ""}` : "";
+    const reps = ex.reps ? `${ex.reps} repetitions` : "";
+    const hold = ex.hold ? `Hold for ${ex.hold} seconds` : "";
+    const desc = lib.desc ? lib.desc.slice(0, 120) : "";
+    const text = [
+      `Exercise ${index + 1} of ${exercises.length}: ${name}.`,
+      sets && reps ? `${sets} of ${reps}.` : sets || reps,
+      hold,
+      desc,
+      index < exercises.length - 1 ? "Get ready for the next exercise." : "That is your last exercise. Well done!",
+    ].filter(Boolean).join(" ");
+
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate  = 0.92;
+    utt.pitch = 1;
+    utt.lang  = "en-US";
+    setSpeakIdx(index);
+    utt.onend = () => {
+      if (index < exercises.length - 1) {
+        setTimeout(() => speakExercise(exercises, index + 1), 2000);
+      } else {
+        setSpeaking(false); setSpeakIdx(-1);
+      }
+    };
+    utt.onerror = () => { setSpeaking(false); setSpeakIdx(-1); };
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utt);
+  }
+
+  function startVoiceSession(exercises) {
+    if (!voiceSupported) { toast("Voice not supported in this browser.", "error"); return; }
+    if (speaking) { stopVoice(); return; }
+    setSpeaking(true);
+    speakExercise(exercises, 0);
+  }
+
+  // Stop voice when leaving the tab
+  useEffect(() => () => stopVoice(), []);
+
   const videoCount = exerciseLib.filter(e => e.videoUrl).length;
 
   return (
@@ -1451,7 +1509,15 @@ function ExercisesTab({ patient, heps, exerciseLib, plans, outcomes, toast, clin
         const pct        = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
         return (
           <div>
-            <SectionHead title="Home Exercise Program" sub="Complete your daily exercises and track progress"/>
+            <SectionHead title="Home Exercise Program" sub="Complete your daily exercises and track progress"
+              action={voiceSupported && hep?.exercises?.length > 0 && (
+                <button onClick={() => startVoiceSession(hep.exercises)}
+                  style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px", background:speaking?C.r50:C.p50, color:speaking?C.r600:C.p600, border:`1.5px solid ${speaking?"#fca5a5":C.p200}`, borderRadius:9, fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+                  <Ic n={speaking?"x":"mic"} s={14} c={speaking?C.r600:C.p600} sw={2}/>
+                  {speaking ? "Stop Voice" : "Voice Guide"}
+                </button>
+              )}
+            />
             {/* HEP selector (if multiple) */}
             {heps.length > 1 && (
               <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:4, marginBottom:14 }}>
@@ -1480,11 +1546,25 @@ function ExercisesTab({ patient, heps, exerciseLib, plans, outcomes, toast, clin
                   <p style={{ fontSize:12, color:C.g400, marginTop:8 }}>{doneCount} of {totalCount} done today{pct===100?" — Great work! 🎉":""}</p>
                 </Card>
                 {/* Exercise cards */}
+                {/* Active voice banner */}
+                {speaking && speakIdx >= 0 && (
+                  <div style={{ background:`linear-gradient(90deg,${C.p600},${C.p500})`, borderRadius:12, padding:"10px 16px", marginBottom:12, display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ width:28,height:28,borderRadius:"50%",background:"rgba(255,255,255,.15)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                      <Ic n="mic" s={14} c="#fff" sw={2}/>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <p style={{ fontSize:12,fontWeight:700,color:"#fff",marginBottom:1 }}>Voice guide active — exercise {speakIdx+1} of {hep.exercises.length}</p>
+                      <p style={{ fontSize:11,color:"rgba(196,181,253,.85)" }}>{(exerciseLib.find(e=>e.id===hep.exercises[speakIdx]?.exId)||{}).name||hep.exercises[speakIdx]?.exId}</p>
+                    </div>
+                    <button onClick={stopVoice} style={{ background:"rgba(255,255,255,.15)",border:"none",borderRadius:7,padding:"6px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",flexShrink:0 }}>Stop</button>
+                  </div>
+                )}
                 {hep.exercises?.map((ex, i) => {
                   const libEx  = exerciseLib.find(e => e.id === ex.exId) || {};
                   const isDone = done[ex.exId];
+                  const isCurrentlySpoken = speaking && speakIdx === i;
                   return (
-                    <div key={ex.exId || i} style={{ background:C.w, borderRadius:14, border:`1.5px solid ${isDone?C.gr600+"44":C.g200}`, marginBottom:10, overflow:"hidden", boxShadow:"0 1px 4px rgba(0,0,0,.04)", transition:"border-color .2s" }}>
+                    <div key={ex.exId || i} style={{ background:C.w, borderRadius:14, border:`1.5px solid ${isCurrentlySpoken?C.p400:isDone?C.gr600+"44":C.g200}`, marginBottom:10, overflow:"hidden", boxShadow:isCurrentlySpoken?`0 0 0 3px ${C.p200}`:"0 1px 4px rgba(0,0,0,.04)", transition:"all .3s" }}>
                       {/* Visual header — uses clinic SVG/image if present, body-region diagram otherwise */}
                       <div style={{ background:isDone?C.gr50:C.p50, display:"flex", justifyContent:"center", alignItems:"center", gap:14, padding:"12px 18px 10px", borderBottom:`1px solid ${isDone?C.gr100:C.p100}` }}>
                         {libEx.svg
